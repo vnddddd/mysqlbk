@@ -1,8 +1,0 @@
-# 每天凌晨4点运行备份脚本
-0 4 * * * /app/backup.sh >> /app/logs/backup.log 2>&1
-
-# 每小时测试一次连接
-0 * * * * mysqladmin --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USER --password=$MYSQL_PASSWORD ping -s >> /app/logs/ping.log 2>&1 || echo "[$(date +'%Y-%m-%d %H:%M:%S')] 无法连接到MySQL服务器" >> /app/logs/ping.log
-
-# 清理一个月前的日志文件
-0 3 * * * find /app/logs -name "*.log.*" -type f -mtime +30 -delete 

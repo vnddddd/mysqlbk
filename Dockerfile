@@ -1,29 +1,33 @@
-FROM alpine:3.14
+FROM alpine:3.18
 
-# 安装必要的包
-RUN apk add --no-cache mysql-client bash curl python3 py3-pip tzdata
+# 安装必要的软件包
+RUN apk update && apk add --no-cache \
+    mysql-client \
+    bash \
+    curl \
+    python3 \
+    py3-pip \
+    tzdata \
+    && pip3 install --no-cache-dir b2sdk
 
-# 设置时区为亚洲/上海
-RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
-    echo "Asia/Shanghai" > /etc/timezone
+# 设置时区为中国标准时间
+ENV TZ=Asia/Shanghai
 
-# 安装B2命令行工具
-RUN pip3 install --no-cache-dir b2
+# 创建备份目录
+RUN mkdir -p /app/backups
 
-# 创建工作目录
+# 复制脚本到容器
+COPY backup.sh /app/
+COPY startup.sh /app/
+
+# 设置脚本执行权限
+RUN chmod +x /app/backup.sh /app/startup.sh
+
+# 设置定时任务
+RUN echo "0 4 * * * /app/backup.sh >> /app/backup.log 2>&1" > /etc/crontabs/root
+
+# 工作目录
 WORKDIR /app
 
-# 复制脚本
-COPY backup.sh /app/
-COPY upload.sh /app/
-COPY start.sh /app/
-
-# 设置执行权限
-RUN chmod +x /app/backup.sh /app/upload.sh /app/start.sh
-
-# 设置cron任务
-COPY crontab /etc/crontabs/root
-RUN chmod 0644 /etc/crontabs/root
-
 # 启动命令
-CMD ["/app/start.sh"] 
+CMD ["/app/startup.sh"] 
