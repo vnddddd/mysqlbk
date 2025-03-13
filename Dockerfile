@@ -6,9 +6,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     python3 \
     python3-pip \
+    python3-venv \
     tzdata \
     cron \
-    && pip3 install --no-cache-dir b2sdk
+    && python3 -m venv /opt/venv
+
+# 激活虚拟环境并安装依赖
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install b2sdk
 
 # 设置时区为中国标准时间
 ENV TZ=Asia/Shanghai
@@ -24,7 +29,7 @@ COPY startup.sh /app/
 RUN chmod +x /app/backup.sh /app/startup.sh
 
 # 设置定时任务
-RUN echo "0 4 * * * /app/backup.sh >> /app/backup.log 2>&1" > /etc/cron.d/mysql-backup && \
+RUN echo "0 4 * * * PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /app/backup.sh >> /app/backup.log 2>&1" > /etc/cron.d/mysql-backup && \
     chmod 0644 /etc/cron.d/mysql-backup && \
     crontab /etc/cron.d/mysql-backup
 

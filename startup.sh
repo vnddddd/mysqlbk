@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# 确保使用虚拟环境中的Python
+export PATH="/opt/venv/bin:$PATH"
+
 # 日志函数
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
