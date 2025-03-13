@@ -32,9 +32,16 @@ fi
 
 log "- BACKUP_RETENTION_DAYS: 本地备份保留天数 (默认: 7)"
 
-# 启动crond
+# 测试MySQL连接
+log "测试MySQL连接..."
+if ! mysql --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" --password="$DB_PASSWORD" --connect-timeout=10 -e "SELECT 1;" &>/dev/null; then
+    log "错误: 无法连接到MySQL服务器，请检查连接信息和认证方式"
+    exit 1
+fi
+
+# 启动cron服务
 log "启动定时任务服务..."
-crond -b -l 8
+service cron start
 
 # 执行初始备份测试
 log "执行初始备份检查..."

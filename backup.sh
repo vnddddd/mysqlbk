@@ -36,6 +36,13 @@ DATE=$(date +"%Y%m%d-%H%M%S")
 BACKUP_DIR="/app/backups"
 mkdir -p "$BACKUP_DIR"
 
+# 测试数据库连接
+log "测试MySQL连接..."
+if ! mysql --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" --password="$DB_PASSWORD" --connect-timeout=10 -e "SELECT 1;" &>/dev/null; then
+    log "错误: 无法连接到MySQL服务器，请检查连接信息和认证方式"
+    exit 1
+fi
+
 # 备份每个数据库
 IFS=',' read -ra DBS <<< "$DB_NAMES"
 FAILED=0
@@ -43,20 +50,31 @@ FAILED=0
 for DB in "${DBS[@]}"; do
     DB=$(echo "$DB" | xargs)  # 去除空格
     BACKUP_FILE="$BACKUP_DIR/backup-$DB-$DATE.sql.gz"
+    ERROR_LOG="$BACKUP_DIR/error-$DB-$DATE.log"
     
     log "开始备份数据库: $DB"
     
-    # 执行备份
-    if mysqldump --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" --password="$DB_PASSWORD" \
-        --single-transaction --routines --triggers --events "$DB" | gzip > "$BACKUP_FILE"; then
-        
-        log "数据库 $DB 备份成功，保存到: $BACKUP_FILE"
-        
-        # 上传到Backblaze B2
-        log "开始上传备份到Backblaze B2: $B2_BUCKET_NAME"
-        
-        # 使用Python脚本上传到B2
-        python3 -c "
+    # 执行备份，尝试使用mysql_native_password认证
+    mysqldump --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" --password="$DB_PASSWORD" \
+        --default-auth=mysql_native_password --column-statistics=0 --single-transaction --routines --triggers --events "$DB" 2>"$ERROR_LOG" | gzip > "$BACKUP_FILE"
+    
+    DUMP_STATUS=$?
+    # 检查错误日志和备份文件大小
+    if [ $DUMP_STATUS -eq 0 ] && [ -s "$BACKUP_FILE" ]; then
+        # 检查备份文件是否只有头部信息（极小）
+        if [ $(gzip -dc "$BACKUP_FILE" | head -20 | grep -c "MySQL dump") -gt 0 ] && [ $(stat -c%s "$BACKUP_FILE") -lt 1000 ]; then
+            log "警告: 数据库 $DB 备份文件异常小，可能只包含头信息，没有实际数据"
+            cat "$ERROR_LOG"
+            FAILED=1
+        else
+            log "数据库 $DB 备份成功，保存到: $BACKUP_FILE (大小: $(stat -c%s "$BACKUP_FILE") 字节)"
+            rm -f "$ERROR_LOG"
+            
+            # 上传到Backblaze B2
+            log "开始上传备份到Backblaze B2: $B2_BUCKET_NAME"
+            
+            # 使用Python脚本上传到B2
+            python3 -c "
 from b2sdk.v2 import InMemoryAccountInfo, B2Api
 import sys
 import os
@@ -84,14 +102,16 @@ except Exception as e:
     print(f'上传失败: {e}')
     sys.exit(1)
 "
-        if [ $? -eq 0 ]; then
-            log "备份成功上传到B2: $B2_BUCKET_NAME/mysql-backups/$(basename "$BACKUP_FILE")"
-        else
-            log "上传到B2失败"
-            FAILED=1
+            if [ $? -eq 0 ]; then
+                log "备份成功上传到B2: $B2_BUCKET_NAME/mysql-backups/$(basename "$BACKUP_FILE")"
+            else
+                log "上传到B2失败"
+                FAILED=1
+            fi
         fi
     else
-        log "数据库 $DB 备份失败"
+        log "数据库 $DB 备份失败，查看错误日志:"
+        cat "$ERROR_LOG"
         FAILED=1
     fi
 done
