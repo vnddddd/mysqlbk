@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     tzdata \
-    cron \
     && python3 -m venv /opt/venv
 
 # 激活虚拟环境并安装依赖
@@ -27,11 +26,6 @@ COPY startup.sh /app/
 
 # 设置脚本执行权限
 RUN chmod +x /app/backup.sh /app/startup.sh
-
-# 设置定时任务
-RUN echo "0 4 * * * PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /app/backup.sh >> /app/backup.log 2>&1" > /etc/cron.d/mysql-backup && \
-    chmod 0644 /etc/cron.d/mysql-backup && \
-    crontab /etc/cron.d/mysql-backup
 
 # 工作目录
 WORKDIR /app
