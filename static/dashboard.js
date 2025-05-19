@@ -1192,7 +1192,14 @@ async function showScheduleBackupModal() {
 
     // 隐藏加载指示器，显示表单
     if (loadingIndicator) loadingIndicator.style.display = 'none';
-    if (backupForm) backupForm.style.display = 'block';
+    if (backupForm) {
+      backupForm.style.display = 'block';
+
+      // 添加一个小延迟，确保DOM完全渲染后再填充表单
+      setTimeout(() => {
+        console.log('DOM渲染完成，准备填充表单');
+      }, 50);
+    }
 
     // 添加调试信息
     console.log('DOM元素状态:');
@@ -1264,18 +1271,28 @@ async function showScheduleBackupModal() {
           }
         }
 
-        // 设置时间
+        // 设置时间 - 强制设置，确保值被应用
         if (formElements.timeInput && config.time) {
           console.log(`设置时间: ${config.time}`);
+          // 使用直接赋值和setAttribute双重保证
           formElements.timeInput.value = config.time;
+          formElements.timeInput.setAttribute('value', config.time);
+          // 触发change事件确保值被应用
+          formElements.timeInput.dispatchEvent(new Event('change', { bubbles: true }));
+          console.log(`时间设置后的值: ${formElements.timeInput.value}`);
         } else {
           console.warn('无法设置时间:', formElements.timeInput, config.time);
         }
 
-        // 设置保留天数
+        // 设置保留天数 - 强制设置，确保值被应用
         if (formElements.retentionInput && config.retention !== undefined) {
           console.log(`设置保留天数: ${config.retention} (类型: ${typeof config.retention})`);
+          // 使用直接赋值和setAttribute双重保证
           formElements.retentionInput.value = config.retention;
+          formElements.retentionInput.setAttribute('value', config.retention);
+          // 触发change事件确保值被应用
+          formElements.retentionInput.dispatchEvent(new Event('change', { bubbles: true }));
+          console.log(`保留天数设置后的值: ${formElements.retentionInput.value}`);
         } else {
           console.warn('无法设置保留天数:', formElements.retentionInput, config.retention);
         }
@@ -1291,16 +1308,38 @@ async function showScheduleBackupModal() {
           console.log('- 时间:', formElements.timeInput ? formElements.timeInput.value : '未找到');
           console.log('- 保留天数:', formElements.retentionInput ? formElements.retentionInput.value : '未找到');
 
-          // 确保时间有默认值
+          // 确保时间有默认值，但不覆盖已设置的值
           if (formElements.timeInput && (!formElements.timeInput.value || formElements.timeInput.value === '')) {
             console.log('时间字段为空，设置默认值: 03:00');
             formElements.timeInput.value = '03:00';
+            formElements.timeInput.setAttribute('value', '03:00');
+            formElements.timeInput.dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (formElements.timeInput && config.time) {
+            // 再次确认时间值已正确设置
+            console.log(`再次确认时间值: ${formElements.timeInput.value} (应为 ${config.time})`);
+            if (formElements.timeInput.value !== config.time) {
+              console.log(`时间值不匹配，强制设置为: ${config.time}`);
+              formElements.timeInput.value = config.time;
+              formElements.timeInput.setAttribute('value', config.time);
+              formElements.timeInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
           }
 
-          // 确保保留天数有默认值
+          // 确保保留天数有默认值，但不覆盖已设置的值
           if (formElements.retentionInput && (!formElements.retentionInput.value || formElements.retentionInput.value === '')) {
             console.log('保留天数字段为空，设置默认值: 7');
             formElements.retentionInput.value = '7';
+            formElements.retentionInput.setAttribute('value', '7');
+            formElements.retentionInput.dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (formElements.retentionInput && config.retention !== undefined) {
+            // 再次确认保留天数值已正确设置
+            console.log(`再次确认保留天数值: ${formElements.retentionInput.value} (应为 ${config.retention})`);
+            if (parseInt(formElements.retentionInput.value) !== config.retention) {
+              console.log(`保留天数值不匹配，强制设置为: ${config.retention}`);
+              formElements.retentionInput.value = config.retention;
+              formElements.retentionInput.setAttribute('value', config.retention);
+              formElements.retentionInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
           }
         }, 100);
       } catch (fillError) {
@@ -1320,19 +1359,33 @@ async function showScheduleBackupModal() {
         // 设置默认频率为每天
         if (formElements.frequencySelect) {
           formElements.frequencySelect.value = 'daily';
+          formElements.frequencySelect.setAttribute('value', 'daily');
+          formElements.frequencySelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // 设置默认时间为凌晨3点
         if (formElements.timeInput) {
           formElements.timeInput.value = '03:00';
+          formElements.timeInput.setAttribute('value', '03:00');
+          formElements.timeInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // 设置默认保留天数为7天
         if (formElements.retentionInput) {
           formElements.retentionInput.value = '7';
+          formElements.retentionInput.setAttribute('value', '7');
+          formElements.retentionInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         console.log('已设置默认值: 频率=daily, 时间=03:00, 保留天数=7');
+
+        // 验证默认值是否正确设置
+        setTimeout(() => {
+          console.log('验证默认值:');
+          console.log('- 频率:', formElements.frequencySelect ? formElements.frequencySelect.value : '未找到');
+          console.log('- 时间:', formElements.timeInput ? formElements.timeInput.value : '未找到');
+          console.log('- 保留天数:', formElements.retentionInput ? formElements.retentionInput.value : '未找到');
+        }, 100);
       } catch (error) {
         console.error('设置默认值时出错:', error);
       }
@@ -1362,19 +1415,33 @@ async function showScheduleBackupModal() {
       // 设置默认频率为每天
       if (formElements.frequencySelect) {
         formElements.frequencySelect.value = 'daily';
+        formElements.frequencySelect.setAttribute('value', 'daily');
+        formElements.frequencySelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
       // 设置默认时间为凌晨3点
       if (formElements.timeInput) {
         formElements.timeInput.value = '03:00';
+        formElements.timeInput.setAttribute('value', '03:00');
+        formElements.timeInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
       // 设置默认保留天数为7天
       if (formElements.retentionInput) {
         formElements.retentionInput.value = '7';
+        formElements.retentionInput.setAttribute('value', '7');
+        formElements.retentionInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
       console.log('错误情况下已设置默认值: 频率=daily, 时间=03:00, 保留天数=7');
+
+      // 验证默认值是否正确设置
+      setTimeout(() => {
+        console.log('错误情况下验证默认值:');
+        console.log('- 频率:', formElements.frequencySelect ? formElements.frequencySelect.value : '未找到');
+        console.log('- 时间:', formElements.timeInput ? formElements.timeInput.value : '未找到');
+        console.log('- 保留天数:', formElements.retentionInput ? formElements.retentionInput.value : '未找到');
+      }, 100);
     } catch (defaultError) {
       console.error('错误情况下设置默认值时出错:', defaultError);
     }
