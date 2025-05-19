@@ -1040,6 +1040,139 @@ app.get("/api/backup/history", authMiddleware, async (c) => {
   return c.json({ success: true, history: backupHistory });
 });
 
+// 计划备份API
+app.post("/api/backup/schedule", authMiddleware, async (c) => {
+  const user = c.get("user");
+  let body;
+
+  // 尝试解析不同格式的请求体
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      body = await c.req.json();
+    } else {
+      body = await c.req.parseBody();
+    }
+  } catch (error) {
+    console.error("解析请求体失败:", error);
+    return c.json({ success: false, message: "无效的请求格式" }, 400);
+  }
+
+  // 验证输入
+  if (!body.frequency || !body.time || !body.retention) {
+    return c.json({ success: false, message: "缺少必要的字段" }, 400);
+  }
+
+  // 根据频率验证其他字段
+  if (body.frequency === 'weekly' && !body.weekday) {
+    return c.json({ success: false, message: "每周备份需要指定星期几" }, 400);
+  }
+
+  if (body.frequency === 'monthly' && !body.dayOfMonth) {
+    return c.json({ success: false, message: "每月备份需要指定日期" }, 400);
+  }
+
+  // 创建计划备份配置
+  const scheduleConfig = {
+    frequency: body.frequency,
+    time: body.time,
+    retention: parseInt(body.retention),
+    updatedAt: new Date().toISOString(),
+    userId: user.id
+  };
+
+  // 添加频率特定字段
+  if (body.frequency === 'weekly') {
+    scheduleConfig.weekday = parseInt(body.weekday);
+  } else if (body.frequency === 'monthly') {
+    scheduleConfig.dayOfMonth = parseInt(body.dayOfMonth);
+  }
+
+  // 保存配置
+  await kv.set(["backupSchedule", user.id], scheduleConfig);
+
+  logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}`);
+
+  return c.json({
+    success: true,
+    message: "计划备份设置已保存",
+    config: scheduleConfig
+  });
+});
+
+// 下载备份API
+app.get("/api/backup/download", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const date = c.req.query("date");
+  const databases = c.req.query("databases");
+
+  if (!date || !databases) {
+    return c.json({ success: false, message: "缺少必要的参数" }, 400);
+  }
+
+  try {
+    // 获取备份历史
+    const backupHistoryResult = await kv.get(["backupHistory", user.id]);
+    const backupHistory = backupHistoryResult.value || [];
+
+    // 查找匹配的备份记录
+    const dbNames = databases.split('_');
+    const backupRecord = backupHistory.find(record => {
+      const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+      const requestDate = date.replace(/-/g, '-');
+      return recordDate.includes(requestDate) &&
+             dbNames.every(db => record.databases.includes(db));
+    });
+
+    if (!backupRecord || !backupRecord.fileUrl) {
+      return c.json({ success: false, message: "未找到指定的备份文件" }, 404);
+    }
+
+    // 获取文件内容（这里需要根据实际存储方式调整）
+    // 如果是B2存储，需要获取下载URL
+    if (backupRecord.storageType === 'backblaze') {
+      // 获取存储配置
+      const storageConfigsResult = await kv.get(["storageConfigs", user.id]);
+      const storageConfigs = storageConfigsResult.value || [];
+      const storage = storageConfigs.find(s => s.id === backupRecord.storageId);
+
+      if (!storage) {
+        return c.json({ success: false, message: "未找到存储配置" }, 404);
+      }
+
+      // 获取B2授权
+      const authUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+      const credentials = `${storage.applicationKeyId}:${storage.applicationKey}`;
+      const encodedCredentials = btoa(credentials);
+
+      const authResponse = await fetch(authUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Basic ${encodedCredentials}`
+        }
+      });
+
+      if (!authResponse.ok) {
+        return c.json({ success: false, message: "获取存储授权失败" }, 500);
+      }
+
+      const authData = await authResponse.json();
+
+      // 获取文件下载URL
+      const downloadUrl = `${authData.downloadUrl}/file/${storage.bucketName}/${backupRecord.fileUrl}`;
+
+      // 重定向到下载URL
+      return c.redirect(downloadUrl);
+    } else {
+      // 本地存储或其他存储方式
+      return c.json({ success: false, message: "不支持的存储类型" }, 400);
+    }
+  } catch (error) {
+    logError(`下载备份失败:`, error);
+    return c.json({ success: false, message: `下载失败: ${error.message}` }, 500);
+  }
+});
+
 // 上传文件到Backblaze B2
 async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, bucketName) {
   try {

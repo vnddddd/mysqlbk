@@ -21,6 +21,52 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // 立即备份按钮
+  const backupNowBtn = document.getElementById('manualBackupBtn');
+  if (backupNowBtn) {
+    backupNowBtn.addEventListener('click', () => {
+      showBackupModal();
+    });
+  }
+
+  // 计划备份按钮
+  const scheduleBackupBtn = document.getElementById('scheduleBackupBtn');
+  if (scheduleBackupBtn) {
+    scheduleBackupBtn.addEventListener('click', () => {
+      showScheduleBackupModal();
+    });
+  }
+
+  // 备份历史操作
+  document.addEventListener('click', (e) => {
+    // 查看备份详情
+    if (e.target.closest('.view-details')) {
+      const historyRow = e.target.closest('.history-row');
+      const timestamp = historyRow.querySelector('.history-cell:nth-child(2)').textContent;
+      const databases = historyRow.querySelector('.history-cell:nth-child(3)').textContent;
+      const size = historyRow.querySelector('.history-cell:nth-child(4)').textContent;
+      const storage = historyRow.querySelector('.history-cell:nth-child(5)').textContent;
+      const isSuccess = historyRow.querySelector('.status-badge').classList.contains('success');
+
+      showBackupDetailsModal({
+        timestamp,
+        databases,
+        size,
+        storage,
+        success: isSuccess
+      });
+    }
+
+    // 下载备份
+    if (e.target.closest('.download-backup')) {
+      const historyRow = e.target.closest('.history-row');
+      const timestamp = historyRow.querySelector('.history-cell:nth-child(2)').textContent;
+      const databases = historyRow.querySelector('.history-cell:nth-child(3)').textContent;
+
+      downloadBackup(timestamp, databases);
+    }
+  });
+
   // 登出功能
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) {
@@ -930,5 +976,244 @@ async function deleteStorage(storageId) {
   } catch (error) {
     console.error('请求失败:', error);
     alert('删除失败，请稍后重试');
+  }
+}
+
+// 显示计划备份模态框
+function showScheduleBackupModal() {
+  // 创建模态框
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'block'; // 确保模态框显示
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>计划备份设置</h3>
+        <button class="modal-close close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="scheduleBackupForm">
+          <div class="form-group">
+            <label for="backupFrequency">备份频率</label>
+            <select id="backupFrequency" name="frequency" class="form-control">
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="weekdayGroup" style="display: none;">
+            <label for="backupWeekday">星期几</label>
+            <select id="backupWeekday" name="weekday" class="form-control">
+              <option value="1">星期一</option>
+              <option value="2">星期二</option>
+              <option value="3">星期三</option>
+              <option value="4">星期四</option>
+              <option value="5">星期五</option>
+              <option value="6">星期六</option>
+              <option value="0">星期日</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="dayOfMonthGroup" style="display: none;">
+            <label for="backupDayOfMonth">日期</label>
+            <select id="backupDayOfMonth" name="dayOfMonth" class="form-control">
+              ${Array.from({length: 28}, (_, i) => `<option value="${i+1}">${i+1}日</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="backupTime">时间</label>
+            <input type="time" id="backupTime" name="time" class="form-control" value="03:00" required>
+          </div>
+
+          <div class="form-group">
+            <label for="backupRetention">保留天数</label>
+            <input type="number" id="backupRetention" name="retention" class="form-control" min="1" value="7" required>
+            <div class="form-hint">备份将自动保留指定天数，超过天数的备份将被自动删除</div>
+          </div>
+
+          <div class="form-error" id="scheduleFormError"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">取消</button>
+        <button type="submit" class="btn btn-primary" form="scheduleBackupForm">保存</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 关闭模态框
+  const closeButtons = modal.querySelectorAll('.close-modal');
+  closeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+  });
+
+  // 点击模态框外部关闭
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+
+  // 根据频率显示/隐藏相关选项
+  const frequencySelect = document.getElementById('backupFrequency');
+  const weekdayGroup = document.getElementById('weekdayGroup');
+  const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
+
+  frequencySelect.addEventListener('change', () => {
+    const value = frequencySelect.value;
+    weekdayGroup.style.display = value === 'weekly' ? 'block' : 'none';
+    dayOfMonthGroup.style.display = value === 'monthly' ? 'block' : 'none';
+  });
+
+  // 表单提交
+  const form = document.getElementById('scheduleBackupForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const scheduleFormError = document.getElementById('scheduleFormError');
+
+    try {
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = '保存中...';
+
+      const response = await fetch('/api/backup/schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          frequency: formData.get('frequency'),
+          weekday: formData.get('weekday'),
+          dayOfMonth: formData.get('dayOfMonth'),
+          time: formData.get('time'),
+          retention: formData.get('retention')
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        alert('计划备份设置已保存');
+        document.body.removeChild(modal);
+        window.location.reload();
+      } else {
+        scheduleFormError.textContent = data.message || '保存计划备份设置失败';
+        submitButton.disabled = false;
+        submitButton.textContent = '保存';
+      }
+    } catch (error) {
+      console.error('保存计划备份设置失败:', error);
+      scheduleFormError.textContent = '保存计划备份设置失败，请稍后重试';
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = false;
+      submitButton.textContent = '保存';
+    }
+  });
+}
+
+// 显示备份详情模态框
+function showBackupDetailsModal(backupInfo) {
+  // 创建模态框
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'block'; // 确保模态框显示
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>备份详情</h3>
+        <button class="modal-close close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="backup-details">
+          <div class="detail-item">
+            <div class="detail-label">状态:</div>
+            <div class="detail-value">
+              <span class="status-badge ${backupInfo.success ? 'success' : 'error'}">
+                ${backupInfo.success ? '成功' : '失败'}
+              </span>
+            </div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">时间:</div>
+            <div class="detail-value">${backupInfo.timestamp}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">数据库:</div>
+            <div class="detail-value">${backupInfo.databases}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">大小:</div>
+            <div class="detail-value">${backupInfo.size}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">存储:</div>
+            <div class="detail-value">${backupInfo.storage}</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">关闭</button>
+        ${backupInfo.success ? `<button type="button" class="btn btn-primary" id="downloadBackupBtn">下载备份</button>` : ''}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 关闭模态框
+  const closeButtons = modal.querySelectorAll('.close-modal');
+  closeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+  });
+
+  // 点击模态框外部关闭
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+
+  // 下载备份按钮
+  const downloadBtn = document.getElementById('downloadBackupBtn');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      downloadBackup(backupInfo.timestamp, backupInfo.databases);
+      document.body.removeChild(modal);
+    });
+  }
+}
+
+// 下载备份文件
+async function downloadBackup(timestamp, databases) {
+  try {
+    // 解析时间戳和数据库名称
+    const date = new Date(timestamp);
+    const formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    const dbNames = databases.split(',').map(db => db.trim()).join('_');
+
+    // 构建下载URL
+    const downloadUrl = `/api/backup/download?date=${formattedDate}&databases=${encodeURIComponent(dbNames)}`;
+
+    // 创建一个隐藏的a标签并触发下载
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `backup_${formattedDate}_${dbNames}.sql.gz`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('下载备份失败:', error);
+    alert('下载备份失败，请稍后重试');
   }
 }
