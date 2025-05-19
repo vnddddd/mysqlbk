@@ -428,7 +428,7 @@ export async function setupScheduledBackups(kv, executeBackup, cleanupOldBackups
               // 清理旧备份
               if (scheduleConfig.retention > 0) {
                 try {
-                  await cleanupOldBackups(scheduleConfig.retention);
+                  await cleanupOldBackups(scheduleConfig.retention, userId);
                   logInfo(`已清理 ${scheduleConfig.retention} 天前的旧备份`);
                 } catch (cleanupError) {
                   logError(`清理旧备份失败: ${cleanupError.message}`);
@@ -629,6 +629,7 @@ async function calculateSha1(data) {
   return hashHex;
 }
 
+// 注意：此函数已移至app.js，这里保留是为了兼容性
 // 清理旧备份
 async function cleanupOldBackups(retentionDays) {
   logInfo(`清理 ${retentionDays} 天前的本地备份文件和 B2 存储`);

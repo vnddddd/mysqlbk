@@ -1609,6 +1609,40 @@ function formatFileSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// 清理旧备份
+async function cleanupOldBackups(retentionDays, userId) {
+  logInfo(`清理 ${retentionDays} 天前的备份记录`);
+
+  try {
+    // 如果提供了用户ID，只清理该用户的备份历史
+    if (userId) {
+      const backupHistoryResult = await kv.get(["backupHistory", userId]);
+      let backupHistory = backupHistoryResult.value || [];
+
+      // 计算截止日期
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+      // 过滤掉旧备份
+      const newHistory = backupHistory.filter(record => {
+        const recordDate = new Date(record.timestamp);
+        return recordDate >= cutoffDate;
+      });
+
+      // 如果有记录被删除，更新历史
+      if (newHistory.length < backupHistory.length) {
+        await kv.set(["backupHistory", userId], newHistory);
+        logInfo(`已清理用户 ${userId} 的 ${backupHistory.length - newHistory.length} 条旧备份记录`);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    logError(`清理旧备份失败: ${error.message || '未知错误'}`, error);
+    return false;
+  }
+}
+
 // 启动计划备份功能
 setupScheduledBackups(kv, executeBackup, cleanupOldBackups).catch(error => {
   logError("启动计划备份功能失败", error);
