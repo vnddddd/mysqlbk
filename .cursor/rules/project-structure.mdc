@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 项目结构与备份服务说明
+
+本项目用于自动化备份远程MySQL数据库并上传到Backblaze B2云存储，适用于Railway等容器平台。
+
+## 主要文件
+- [Dockerfile](mdc:Dockerfile)：构建基础镜像，安装MySQL客户端、Python3、b2sdk等依赖，设置工作目录和启动命令。
+- [startup.sh](mdc:startup.sh)：容器启动入口脚本，负责环境变量校验、MySQL连接测试、初始备份、并通过内置循环实现每天凌晨4点自动备份（不依赖cron）。
+- [backup.sh](mdc:backup.sh)：核心备份脚本，负责mysqldump全量备份、压缩、上传到Backblaze B2，并进行错误检测和日志输出。
+
+## 定时备份机制
+- 不依赖系统cron服务，而是在[startup.sh](mdc:startup.sh)中通过`while true`循环+`sleep`实现定时。
+- 每天凌晨4点自动执行一次备份，防止重复备份通过/tmp目录下的标记文件实现。
+
+## 依赖说明
+- 基于`mysql:8.0-debian`镜像，确保mysqldump兼容MySQL 8.0及其认证方式。
+- Python依赖通过虚拟环境`/opt/venv`安装，主要依赖`b2sdk`用于Backblaze B2 API交互。
+
+## 环境变量
+- 需配置MySQL连接信息（DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAMES）
+- 需配置Backblaze B2信息（B2_APPLICATION_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET_NAME）
+- 可选配置本地备份保留天数（BACKUP_RETENTION_DAYS）
+
+## 启动流程
+1. 校验环境变量
+2. 测试MySQL连接
+3. 执行一次初始备份
+4. 启动内置定时循环，每天凌晨4点自动备份
+
+## 适用场景
+- 适合Railway等不保证cron持久运行的容器平台
+- 适合只需远程连接MySQL、无需在数据库服务器本地执行命令的场景
+
