@@ -1019,6 +1019,20 @@ app.get("/api/backup/history", authMiddleware, async (c) => {
   return c.json({ success: true, history: backupHistory });
 });
 
+// 获取计划备份设置
+app.get("/api/backup/schedule", authMiddleware, async (c) => {
+  const user = c.get("user");
+
+  // 获取用户的计划备份配置
+  const scheduleConfigResult = await kv.get(["backupSchedule", user.id]);
+  const scheduleConfig = scheduleConfigResult.value || null;
+
+  return c.json({
+    success: true,
+    config: scheduleConfig
+  });
+});
+
 // 计划备份API
 app.post("/api/backup/schedule", authMiddleware, async (c) => {
   const user = c.get("user");
@@ -1068,15 +1082,19 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
   }
 
   // 保存配置
-  await kv.set(["backupSchedule", user.id], scheduleConfig);
+  try {
+    await kv.set(["backupSchedule", user.id], scheduleConfig);
+    logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}`);
 
-  logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}`);
-
-  return c.json({
-    success: true,
-    message: "计划备份设置已保存",
-    config: scheduleConfig
-  });
+    return c.json({
+      success: true,
+      message: "计划备份设置已保存",
+      config: scheduleConfig
+    });
+  } catch (error) {
+    logError(`保存计划备份设置失败:`, error);
+    return c.json({ success: false, message: "保存计划备份设置失败，请稍后重试" }, 500);
+  }
 });
 
 // 下载备份API

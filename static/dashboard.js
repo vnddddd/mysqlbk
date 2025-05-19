@@ -950,7 +950,7 @@ async function deleteStorage(storageId) {
 }
 
 // 显示计划备份模态框
-function showScheduleBackupModal() {
+async function showScheduleBackupModal() {
   // 创建模态框
   const modal = document.createElement('div');
   modal.className = 'modal';
@@ -962,7 +962,11 @@ function showScheduleBackupModal() {
         <button class="modal-close close-modal">&times;</button>
       </div>
       <div class="modal-body">
-        <form id="scheduleBackupForm">
+        <div id="scheduleLoadingIndicator" class="loading-indicator">
+          <div class="spinner"></div>
+          <div>加载中...</div>
+        </div>
+        <form id="scheduleBackupForm" style="display: none;">
           <div class="form-group">
             <label for="backupFrequency">备份频率</label>
             <select id="backupFrequency" name="frequency" class="form-control">
@@ -1029,6 +1033,52 @@ function showScheduleBackupModal() {
       document.body.removeChild(modal);
     }
   });
+
+  // 获取现有的计划备份设置
+  try {
+    const response = await fetch('/api/backup/schedule');
+    const data = await response.json();
+
+    // 隐藏加载指示器，显示表单
+    document.getElementById('scheduleLoadingIndicator').style.display = 'none';
+    document.getElementById('scheduleBackupForm').style.display = 'block';
+
+    // 如果有现有配置，填充表单
+    if (data.success && data.config) {
+      const config = data.config;
+
+      // 设置频率
+      const frequencySelect = document.getElementById('backupFrequency');
+      frequencySelect.value = config.frequency;
+
+      // 设置星期几（如果适用）
+      if (config.frequency === 'weekly' && config.weekday !== undefined) {
+        document.getElementById('weekdayGroup').style.display = 'block';
+        document.getElementById('backupWeekday').value = config.weekday;
+      }
+
+      // 设置日期（如果适用）
+      if (config.frequency === 'monthly' && config.dayOfMonth !== undefined) {
+        document.getElementById('dayOfMonthGroup').style.display = 'block';
+        document.getElementById('backupDayOfMonth').value = config.dayOfMonth;
+      }
+
+      // 设置时间
+      if (config.time) {
+        document.getElementById('backupTime').value = config.time;
+      }
+
+      // 设置保留天数
+      if (config.retention) {
+        document.getElementById('backupRetention').value = config.retention;
+      }
+    }
+  } catch (error) {
+    console.error('获取计划备份设置失败:', error);
+    document.getElementById('scheduleLoadingIndicator').style.display = 'none';
+    document.getElementById('scheduleBackupForm').style.display = 'block';
+    document.getElementById('scheduleFormError').textContent = '获取现有设置失败，显示默认值';
+  }
 
   // 根据频率显示/隐藏相关选项
   const frequencySelect = document.getElementById('backupFrequency');
