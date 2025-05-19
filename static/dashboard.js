@@ -3,24 +3,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // 导航菜单切换
   const navLinks = document.querySelectorAll('.dashboard-nav a');
   const sections = document.querySelectorAll('.dashboard-section');
-  
+
   navLinks.forEach(link => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      
+
       // 获取目标部分的ID
       const targetId = link.getAttribute('href').substring(1);
-      
+
       // 移除所有活动类
       navLinks.forEach(l => l.classList.remove('active'));
       sections.forEach(s => s.classList.remove('active'));
-      
+
       // 添加活动类到当前链接和目标部分
       link.classList.add('active');
       document.getElementById(targetId).classList.add('active');
     });
   });
-  
+
   // 登出功能
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) {
@@ -29,9 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/logout', {
           method: 'POST'
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok && data.success) {
           window.location.href = data.redirect || '/login';
         }
@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  
+
   // 添加数据库按钮
   const addDatabaseBtn = document.getElementById('addDatabaseBtn');
   if (addDatabaseBtn) {
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showDatabaseModal();
     });
   }
-  
+
   // 添加存储按钮
   const addStorageBtn = document.getElementById('addStorageBtn');
   if (addStorageBtn) {
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showStorageModal();
     });
   }
-  
+
   // 手动备份按钮
   const manualBackupBtn = document.getElementById('manualBackupBtn');
   if (manualBackupBtn) {
@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showBackupModal();
     });
   }
-  
+
   // 数据库项目操作
   document.addEventListener('click', (e) => {
     // 编辑数据库
@@ -74,35 +74,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const dbId = dbItem.getAttribute('data-id');
       editDatabase(dbId);
     }
-    
+
     // 测试数据库连接
     if (e.target.closest('.test-db')) {
       const dbItem = e.target.closest('.database-item');
       const dbId = dbItem.getAttribute('data-id');
       testDatabaseConnection(dbId);
     }
-    
+
     // 删除数据库
     if (e.target.closest('.delete-db')) {
       const dbItem = e.target.closest('.database-item');
       const dbId = dbItem.getAttribute('data-id');
       deleteDatabase(dbId);
     }
-    
+
     // 编辑存储
     if (e.target.closest('.edit-storage')) {
       const storageItem = e.target.closest('.storage-item');
       const storageId = storageItem.getAttribute('data-id');
       editStorage(storageId);
     }
-    
+
     // 测试存储连接
     if (e.target.closest('.test-storage')) {
       const storageItem = e.target.closest('.storage-item');
       const storageId = storageItem.getAttribute('data-id');
       testStorageConnection(storageId);
     }
-    
+
     // 删除存储
     if (e.target.closest('.delete-storage')) {
       const storageItem = e.target.closest('.storage-item');
@@ -110,20 +110,20 @@ document.addEventListener('DOMContentLoaded', () => {
       deleteStorage(storageId);
     }
   });
-  
+
   // 备份设置表单
   const backupSettingsForm = document.getElementById('backupSettingsForm');
   if (backupSettingsForm) {
     backupSettingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
+
       const formData = new FormData(backupSettingsForm);
       const settings = {
         backupRetentionDays: formData.get('backupRetentionDays'),
         backupTime: formData.get('backupTime'),
         compressionLevel: formData.get('compressionLevel')
       };
-      
+
       try {
         const response = await fetch('/api/settings/backup', {
           method: 'POST',
@@ -132,9 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
           },
           body: JSON.stringify(settings)
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok && data.success) {
           alert('备份设置已保存');
         } else {
@@ -146,19 +146,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  
+
   // 账户设置表单
   const accountSettingsForm = document.getElementById('accountSettingsForm');
   if (accountSettingsForm) {
     accountSettingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
+
       const formData = new FormData(accountSettingsForm);
       const settings = {
         name: formData.get('name'),
         password: formData.get('password')
       };
-      
+
       try {
         const response = await fetch('/api/settings/account', {
           method: 'POST',
@@ -167,9 +167,9 @@ document.addEventListener('DOMContentLoaded', () => {
           },
           body: JSON.stringify(settings)
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok && data.success) {
           alert('账户设置已更新');
           // 清空密码字段
@@ -183,20 +183,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  
+
   // 备份历史筛选
   const historyFilter = document.getElementById('historyFilter');
   if (historyFilter) {
     historyFilter.addEventListener('change', () => {
       const value = historyFilter.value;
       const rows = document.querySelectorAll('.history-row');
-      
+
       rows.forEach(row => {
         const statusBadge = row.querySelector('.status-badge');
         const isSuccess = statusBadge.classList.contains('success');
-        
-        if (value === 'all' || 
-            (value === 'success' && isSuccess) || 
+
+        if (value === 'all' ||
+            (value === 'success' && isSuccess) ||
             (value === 'failed' && !isSuccess)) {
           row.style.display = '';
         } else {
@@ -216,7 +216,7 @@ function showDatabaseModal(dbData = null) {
     <div class="modal-content">
       <div class="modal-header">
         <h3>${dbData ? '编辑数据库' : '添加数据库'}</h3>
-        <button class="close-modal">&times;</button>
+        <button class="modal-close close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <form id="databaseForm">
@@ -247,17 +247,17 @@ function showDatabaseModal(dbData = null) {
             <div class="form-hint">多个数据库用逗号分隔</div>
           </div>
           <div class="form-error" id="dbFormError"></div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary close-modal">取消</button>
-            <button type="submit" class="btn btn-primary">${dbData ? '保存' : '添加'}</button>
-          </div>
         </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">取消</button>
+        <button type="submit" class="btn btn-primary" form="databaseForm">${dbData ? '保存' : '添加'}</button>
       </div>
     </div>
   `;
-  
+
   document.body.appendChild(modal);
-  
+
   // 关闭模态框
   const closeButtons = modal.querySelectorAll('.close-modal');
   closeButtons.forEach(button => {
@@ -265,26 +265,26 @@ function showDatabaseModal(dbData = null) {
       document.body.removeChild(modal);
     });
   });
-  
+
   // 点击模态框外部关闭
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
       document.body.removeChild(modal);
     }
   });
-  
+
   // 表单提交
   const form = modal.querySelector('#databaseForm');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const formData = new FormData(form);
     const dbFormError = document.getElementById('dbFormError');
-    
+
     try {
       const url = dbData ? `/api/databases/${dbData.id}` : '/api/databases';
       const method = dbData ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -292,9 +292,9 @@ function showDatabaseModal(dbData = null) {
         },
         body: new URLSearchParams(formData)
       });
-      
+
       const data = await response.json();
-      
+
       if (response.ok && data.success) {
         // 成功，关闭模态框并刷新页面
         document.body.removeChild(modal);

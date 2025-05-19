@@ -844,7 +844,7 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           <h2>系统概览</h2>
           ${firstLogin ? `
           <div class="alert alert-warning">
-            <strong>首次登录提示：</strong> 您正在使用系统生成的初始密码登录，请立即前往 <a href="#settings">系统设置</a> 修改您的密码以确保账户安全。
+            <strong>首次登录提示：</strong> 您正在使用系统生成的初始密码登录，请立即前往系统设置修改您的密码以确保账户安全。
           </div>
           ` : ''}
           <div class="overview-cards">
@@ -878,7 +878,7 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           <div class="recent-activity">
             <h3>最近活动</h3>
             <div class="activity-list">
-              ${backupHistory.slice(0, 5).map(history => `
+              ${backupHistory.length > 0 ? backupHistory.slice(0, 5).map(history => `
                 <div class="activity-item">
                   <div class="activity-icon ${history.success ? 'success' : 'error'}"></div>
                   <div class="activity-details">
@@ -886,7 +886,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                     <div class="activity-time">${new Date(history.timestamp).toLocaleString()}</div>
                   </div>
                 </div>
-              `).join('')}
+              `).join('') : `
+                <div class="empty-state">
+                  <div class="empty-icon"></div>
+                  <h3>暂无活动记录</h3>
+                  <p>执行备份后，活动记录将显示在这里</p>
+                </div>
+              `}
             </div>
           </div>
         </section>
@@ -910,9 +916,9 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                   </div>
                 </div>
                 <div class="database-actions">
-                  <button class="btn btn-icon edit-db" title="编辑"><span class="icon-edit"></span></button>
-                  <button class="btn btn-icon test-db" title="测试连接"><span class="icon-test"></span></button>
-                  <button class="btn btn-icon delete-db" title="删除"><span class="icon-delete"></span></button>
+                  <button class="btn btn-icon edit-db" title="编辑">编辑</button>
+                  <button class="btn btn-icon test-db" title="测试连接">测试</button>
+                  <button class="btn btn-icon delete-db" title="删除">删除</button>
                 </div>
               </div>
             `).join('') : `
@@ -942,13 +948,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                     ${storage.type === 'backblaze' ? `
                       <span>存储桶: ${storage.bucketName}</span>
                     ` : ''}
-                    <span>状态: ${storage.active ? '<span class="status-active">活跃</span>' : '<span class="status-inactive">未激活</span>'}</span>
+                    <span>状态: ${storage.active ? '活跃' : '未激活'}</span>
                   </div>
                 </div>
                 <div class="storage-actions">
-                  <button class="btn btn-icon edit-storage" title="编辑"><span class="icon-edit"></span></button>
-                  <button class="btn btn-icon test-storage" title="测试连接"><span class="icon-test"></span></button>
-                  <button class="btn btn-icon delete-storage" title="删除"><span class="icon-delete"></span></button>
+                  <button class="btn btn-icon edit-storage" title="编辑">编辑</button>
+                  <button class="btn btn-icon test-storage" title="测试连接">测试</button>
+                  <button class="btn btn-icon delete-storage" title="删除">删除</button>
                 </div>
               </div>
             `).join('') : `
@@ -997,8 +1003,8 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                     <div class="history-cell">${formatFileSize(history.totalBackupSize)}</div>
                     <div class="history-cell">${history.storage || '-'}</div>
                     <div class="history-cell">
-                      <button class="btn btn-icon view-details" title="查看详情"><span class="icon-details"></span></button>
-                      ${history.success ? `<button class="btn btn-icon download-backup" title="下载备份"><span class="icon-download"></span></button>` : ''}
+                      <button class="btn btn-icon view-details" title="查看详情">详情</button>
+                      ${history.success ? `<button class="btn btn-icon download-backup" title="下载备份">下载</button>` : ''}
                     </div>
                   </div>
                 `).join('')}
