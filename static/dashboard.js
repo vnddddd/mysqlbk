@@ -1136,12 +1136,12 @@ async function showScheduleBackupModal() {
 
           <div class="form-group">
             <label for="backupTime">时间</label>
-            <input type="time" id="backupTime" name="time" class="form-control" value="03:00" required>
+            <input type="time" id="backupTime" name="time" class="form-control" required>
           </div>
 
           <div class="form-group">
             <label for="backupRetention">保留天数</label>
-            <input type="number" id="backupRetention" name="retention" class="form-control" min="1" value="7" required>
+            <input type="number" id="backupRetention" name="retention" class="form-control" min="1" required>
             <div class="form-hint">备份将自动保留指定天数，超过天数的备份将被自动删除</div>
           </div>
 
@@ -1282,7 +1282,7 @@ async function showScheduleBackupModal() {
 
         console.log('表单填充完成');
 
-        // 验证表单值是否正确设置
+        // 验证表单值是否正确设置并确保默认值
         setTimeout(() => {
           console.log('验证表单值:');
           console.log('- 频率:', formElements.frequencySelect ? formElements.frequencySelect.value : '未找到');
@@ -1290,12 +1290,52 @@ async function showScheduleBackupModal() {
           console.log('- 日期:', formElements.dayOfMonthSelect ? formElements.dayOfMonthSelect.value : '未找到');
           console.log('- 时间:', formElements.timeInput ? formElements.timeInput.value : '未找到');
           console.log('- 保留天数:', formElements.retentionInput ? formElements.retentionInput.value : '未找到');
+
+          // 确保时间有默认值
+          if (formElements.timeInput && (!formElements.timeInput.value || formElements.timeInput.value === '')) {
+            console.log('时间字段为空，设置默认值: 03:00');
+            formElements.timeInput.value = '03:00';
+          }
+
+          // 确保保留天数有默认值
+          if (formElements.retentionInput && (!formElements.retentionInput.value || formElements.retentionInput.value === '')) {
+            console.log('保留天数字段为空，设置默认值: 7');
+            formElements.retentionInput.value = '7';
+          }
         }, 100);
       } catch (fillError) {
         console.error('填充表单时出错:', fillError);
       }
     } else {
       console.log('没有现有配置或获取配置失败:', data);
+
+      // 设置默认值
+      try {
+        const formElements = {
+          frequencySelect: document.getElementById('backupFrequency'),
+          timeInput: document.getElementById('backupTime'),
+          retentionInput: document.getElementById('backupRetention')
+        };
+
+        // 设置默认频率为每天
+        if (formElements.frequencySelect) {
+          formElements.frequencySelect.value = 'daily';
+        }
+
+        // 设置默认时间为凌晨3点
+        if (formElements.timeInput) {
+          formElements.timeInput.value = '03:00';
+        }
+
+        // 设置默认保留天数为7天
+        if (formElements.retentionInput) {
+          formElements.retentionInput.value = '7';
+        }
+
+        console.log('已设置默认值: 频率=daily, 时间=03:00, 保留天数=7');
+      } catch (error) {
+        console.error('设置默认值时出错:', error);
+      }
     }
   } catch (error) {
     console.error('获取计划备份设置失败:', error);
@@ -1309,6 +1349,34 @@ async function showScheduleBackupModal() {
     if (errorElement) {
       errorElement.textContent = '获取现有设置失败，显示默认值';
       errorElement.style.color = 'red';
+    }
+
+    // 设置默认值
+    try {
+      const formElements = {
+        frequencySelect: document.getElementById('backupFrequency'),
+        timeInput: document.getElementById('backupTime'),
+        retentionInput: document.getElementById('backupRetention')
+      };
+
+      // 设置默认频率为每天
+      if (formElements.frequencySelect) {
+        formElements.frequencySelect.value = 'daily';
+      }
+
+      // 设置默认时间为凌晨3点
+      if (formElements.timeInput) {
+        formElements.timeInput.value = '03:00';
+      }
+
+      // 设置默认保留天数为7天
+      if (formElements.retentionInput) {
+        formElements.retentionInput.value = '7';
+      }
+
+      console.log('错误情况下已设置默认值: 频率=daily, 时间=03:00, 保留天数=7');
+    } catch (defaultError) {
+      console.error('错误情况下设置默认值时出错:', defaultError);
     }
   }
 
