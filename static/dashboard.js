@@ -1080,9 +1080,18 @@ async function deleteStorage(storageId) {
 
 // 显示计划备份模态框
 async function showScheduleBackupModal() {
+  console.log('执行 showScheduleBackupModal 函数');
+
+  // 检查是否已经有模态框打开
+  if (document.querySelector('.modal')) {
+    console.log('已有模态框打开，不再创建新的模态框');
+    return;
+  }
+
   // 创建模态框
   const modal = document.createElement('div');
   modal.className = 'modal';
+  modal.id = 'scheduleBackupModal'; // 添加ID以便于识别
   modal.style.display = 'block'; // 确保模态框显示
   modal.innerHTML = `
     <div class="modal-content">
@@ -1141,72 +1150,102 @@ async function showScheduleBackupModal() {
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary close-modal">取消</button>
-        <button type="submit" class="btn btn-primary" form="scheduleBackupForm">保存</button>
+        <button type="button" class="btn btn-primary" id="scheduleSubmitBtn">保存</button>
       </div>
     </div>
   `;
 
   document.body.appendChild(modal);
+  console.log('计划备份模态框已添加到DOM');
 
   // 关闭模态框
   const closeButtons = modal.querySelectorAll('.close-modal');
   closeButtons.forEach(button => {
     button.addEventListener('click', () => {
-      document.body.removeChild(modal);
+      console.log('关闭计划备份模态框');
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+      }
     });
   });
 
   // 点击模态框外部关闭
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
-      document.body.removeChild(modal);
+      console.log('点击模态框外部，关闭计划备份模态框');
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+      }
     }
   });
 
   // 获取现有的计划备份设置
   try {
+    console.log('请求获取计划备份设置');
     const response = await fetch('/api/backup/schedule');
     const data = await response.json();
+    console.log('计划备份设置响应:', data);
+
+    // 获取DOM元素
+    const loadingIndicator = document.getElementById('scheduleLoadingIndicator');
+    const backupForm = document.getElementById('scheduleBackupForm');
 
     // 隐藏加载指示器，显示表单
-    document.getElementById('scheduleLoadingIndicator').style.display = 'none';
-    document.getElementById('scheduleBackupForm').style.display = 'block';
+    if (loadingIndicator) loadingIndicator.style.display = 'none';
+    if (backupForm) backupForm.style.display = 'block';
 
     // 如果有现有配置，填充表单
     if (data.success && data.config) {
       const config = data.config;
+      console.log('填充现有配置:', config);
 
       // 设置频率
       const frequencySelect = document.getElementById('backupFrequency');
-      frequencySelect.value = config.frequency;
+      if (frequencySelect && config.frequency) {
+        frequencySelect.value = config.frequency;
+      }
 
       // 设置星期几（如果适用）
+      const weekdayGroup = document.getElementById('weekdayGroup');
+      const weekdaySelect = document.getElementById('backupWeekday');
       if (config.frequency === 'weekly' && config.weekday !== undefined) {
-        document.getElementById('weekdayGroup').style.display = 'block';
-        document.getElementById('backupWeekday').value = config.weekday;
+        if (weekdayGroup) weekdayGroup.style.display = 'block';
+        if (weekdaySelect) weekdaySelect.value = config.weekday;
       }
 
       // 设置日期（如果适用）
+      const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
+      const dayOfMonthSelect = document.getElementById('backupDayOfMonth');
       if (config.frequency === 'monthly' && config.dayOfMonth !== undefined) {
-        document.getElementById('dayOfMonthGroup').style.display = 'block';
-        document.getElementById('backupDayOfMonth').value = config.dayOfMonth;
+        if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
+        if (dayOfMonthSelect) dayOfMonthSelect.value = config.dayOfMonth;
       }
 
       // 设置时间
-      if (config.time) {
-        document.getElementById('backupTime').value = config.time;
+      const timeInput = document.getElementById('backupTime');
+      if (timeInput && config.time) {
+        timeInput.value = config.time;
       }
 
       // 设置保留天数
-      if (config.retention) {
-        document.getElementById('backupRetention').value = config.retention;
+      const retentionInput = document.getElementById('backupRetention');
+      if (retentionInput && config.retention) {
+        retentionInput.value = config.retention;
       }
     }
   } catch (error) {
     console.error('获取计划备份设置失败:', error);
-    document.getElementById('scheduleLoadingIndicator').style.display = 'none';
-    document.getElementById('scheduleBackupForm').style.display = 'block';
-    document.getElementById('scheduleFormError').textContent = '获取现有设置失败，显示默认值';
+
+    const loadingIndicator = document.getElementById('scheduleLoadingIndicator');
+    const backupForm = document.getElementById('scheduleBackupForm');
+    const errorElement = document.getElementById('scheduleFormError');
+
+    if (loadingIndicator) loadingIndicator.style.display = 'none';
+    if (backupForm) backupForm.style.display = 'block';
+    if (errorElement) {
+      errorElement.textContent = '获取现有设置失败，显示默认值';
+      errorElement.style.color = 'red';
+    }
   }
 
   // 根据频率显示/隐藏相关选项
@@ -1214,77 +1253,108 @@ async function showScheduleBackupModal() {
   const weekdayGroup = document.getElementById('weekdayGroup');
   const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
 
-  frequencySelect.addEventListener('change', () => {
-    const value = frequencySelect.value;
-    weekdayGroup.style.display = value === 'weekly' ? 'block' : 'none';
-    dayOfMonthGroup.style.display = value === 'monthly' ? 'block' : 'none';
-  });
+  if (frequencySelect && weekdayGroup && dayOfMonthGroup) {
+    frequencySelect.addEventListener('change', () => {
+      const value = frequencySelect.value;
+      weekdayGroup.style.display = value === 'weekly' ? 'block' : 'none';
+      dayOfMonthGroup.style.display = value === 'monthly' ? 'block' : 'none';
+    });
+  }
 
-  // 表单提交
-  const form = document.getElementById('scheduleBackupForm');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  // 提交按钮点击事件
+  const submitButton = document.getElementById('scheduleSubmitBtn');
+  if (submitButton) {
+    submitButton.addEventListener('click', async () => {
+      console.log('点击保存按钮');
 
-    const formData = new FormData(form);
-    const scheduleFormError = document.getElementById('scheduleFormError');
-    scheduleFormError.textContent = ''; // 清除之前的错误信息
-
-    try {
-      const submitButton = form.querySelector('button[type="submit"]');
-      submitButton.disabled = true;
-      submitButton.textContent = '保存中...';
-
-      // 构建请求数据
-      const requestData = {
-        frequency: formData.get('frequency'),
-        time: formData.get('time'),
-        retention: formData.get('retention')
-      };
-
-      // 根据频率添加特定字段
-      if (requestData.frequency === 'weekly') {
-        requestData.weekday = formData.get('weekday');
-      } else if (requestData.frequency === 'monthly') {
-        requestData.dayOfMonth = formData.get('dayOfMonth');
+      const form = document.getElementById('scheduleBackupForm');
+      if (!form) {
+        console.error('未找到计划备份表单元素');
+        alert('表单加载失败，请刷新页面重试');
+        return;
       }
 
-      console.log('提交计划备份设置:', requestData);
+      const formData = new FormData(form);
+      const scheduleFormError = document.getElementById('scheduleFormError');
+      if (scheduleFormError) {
+        scheduleFormError.textContent = ''; // 清除之前的错误信息
+      }
 
-      const response = await fetch('/api/backup/schedule', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestData)
-      });
+      try {
+        // 禁用提交按钮
+        submitButton.disabled = true;
+        submitButton.textContent = '保存中...';
 
-      console.log('服务器响应状态:', response.status);
-      const data = await response.json();
-      console.log('服务器响应数据:', data);
+        // 构建请求数据
+        const requestData = {
+          frequency: formData.get('frequency'),
+          time: formData.get('time'),
+          retention: formData.get('retention')
+        };
 
-      if (response.ok && data.success) {
-        alert('计划备份设置已保存');
-        document.body.removeChild(modal);
-        window.location.reload();
-      } else {
-        let errorMsg = data.message || '保存计划备份设置失败';
-        if (data.error) {
-          errorMsg += `: ${data.error}`;
+        // 根据频率添加特定字段
+        if (requestData.frequency === 'weekly') {
+          requestData.weekday = formData.get('weekday');
+        } else if (requestData.frequency === 'monthly') {
+          requestData.dayOfMonth = formData.get('dayOfMonth');
         }
-        scheduleFormError.textContent = errorMsg;
-        scheduleFormError.style.color = 'red';
+
+        console.log('提交计划备份设置:', requestData);
+
+        const response = await fetch('/api/backup/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+        });
+
+        console.log('服务器响应状态:', response.status);
+        const data = await response.json();
+        console.log('服务器响应数据:', data);
+
+        if (response.ok && data.success) {
+          alert('计划备份设置已保存');
+          // 安全地移除模态框
+          if (document.body.contains(modal)) {
+            document.body.removeChild(modal);
+          }
+          window.location.reload();
+        } else {
+          let errorMsg = data.message || '保存计划备份设置失败';
+          if (data.error) {
+            errorMsg += `: ${data.error}`;
+          }
+          if (scheduleFormError) {
+            scheduleFormError.textContent = errorMsg;
+            scheduleFormError.style.color = 'red';
+          } else {
+            console.error('错误信息:', errorMsg);
+            alert('保存失败: ' + errorMsg);
+          }
+
+          // 恢复提交按钮
+          submitButton.disabled = false;
+          submitButton.textContent = '保存';
+        }
+      } catch (error) {
+        console.error('保存计划备份设置失败:', error);
+
+        if (scheduleFormError) {
+          scheduleFormError.textContent = `保存计划备份设置失败: ${error.message || '未知错误'}`;
+          scheduleFormError.style.color = 'red';
+        } else {
+          alert(`保存失败: ${error.message || '未知错误'}`);
+        }
+
+        // 恢复提交按钮
         submitButton.disabled = false;
         submitButton.textContent = '保存';
       }
-    } catch (error) {
-      console.error('保存计划备份设置失败:', error);
-      scheduleFormError.textContent = `保存计划备份设置失败: ${error.message || '未知错误'}`;
-      scheduleFormError.style.color = 'red';
-      const submitButton = form.querySelector('button[type="submit"]');
-      submitButton.disabled = false;
-      submitButton.textContent = '保存';
-    }
-  });
+    });
+  } else {
+    console.error('未找到提交按钮元素');
+  }
 }
 
 // 显示备份详情模态框
