@@ -154,12 +154,35 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
 
       const formData = new FormData(accountSettingsForm);
+      const name = formData.get('name');
+      const password = formData.get('password');
+
+      // 验证输入
+      if (!name) {
+        alert('姓名不能为空');
+        return;
+      }
+
+      // 如果提供了密码，验证密码长度
+      if (password && password.length < 6) {
+        alert('密码长度至少为6个字符');
+        return;
+      }
+
       const settings = {
-        name: formData.get('name'),
-        password: formData.get('password')
+        name: name,
+        password: password
       };
 
+      console.log('提交账户设置更新:', { name, hasPassword: !!password });
+
       try {
+        // 显示加载状态
+        const submitButton = accountSettingsForm.querySelector('button[type="submit"]');
+        const originalText = submitButton.textContent;
+        submitButton.textContent = '更新中...';
+        submitButton.disabled = true;
+
         const response = await fetch('/api/settings/account', {
           method: 'POST',
           headers: {
@@ -169,11 +192,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const data = await response.json();
+        console.log('账户设置更新响应:', data);
+
+        // 恢复按钮状态
+        submitButton.textContent = originalText;
+        submitButton.disabled = false;
 
         if (response.ok && data.success) {
-          alert('账户设置已更新');
+          alert('账户设置已更新' + (password ? '，请使用新密码重新登录' : ''));
           // 清空密码字段
           document.getElementById('accountPassword').value = '';
+
+          // 如果更新了密码，延迟后登出
+          if (password) {
+            setTimeout(() => {
+              // 登出并重定向到登录页面
+              fetch('/api/logout', { method: 'POST' })
+                .then(() => {
+                  window.location.href = '/login';
+                })
+                .catch(err => {
+                  console.error('登出失败:', err);
+                  window.location.href = '/login';
+                });
+            }, 1500);
+          }
         } else {
           alert(data.message || '更新账户设置失败');
         }

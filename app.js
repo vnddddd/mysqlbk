@@ -15,19 +15,29 @@ const kv = await Deno.openKv();
 
 // 简单的密码哈希函数（替代bcrypt）
 async function simpleHash(password) {
-  // 使用内置的 crypto 模块创建 SHA-256 哈希
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + "mysql-backup-salt");
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+  try {
+    // 使用内置的 crypto 模块创建 SHA-256 哈希
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + "mysql-backup-salt");
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  } catch (error) {
+    console.error("密码哈希生成失败:", error);
+    throw new Error("密码处理失败，请稍后重试");
+  }
 }
 
-// 验证密码
+// 验证密码 - 直接比较哈希值
 async function verifyPassword(password, hash) {
-  const passwordHash = await simpleHash(password);
-  return passwordHash === hash;
+  try {
+    const passwordHash = await simpleHash(password);
+    return passwordHash === hash;
+  } catch (error) {
+    console.error("密码验证失败:", error);
+    throw new Error("密码验证失败，请稍后重试");
+  }
 }
 
 // 创建默认管理员账号
@@ -150,26 +160,65 @@ app.get("/dashboard", authMiddleware, async (c) => {
 
 // 处理登录请求
 app.post("/api/login", async (c) => {
-  const { username, password } = await c.req.parseBody();
+  let body;
+
+  // 尝试解析不同格式的请求体
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      body = await c.req.json();
+    } else {
+      body = await c.req.parseBody();
+    }
+  } catch (error) {
+    console.error("解析登录请求体失败:", error);
+    return c.json({ success: false, message: "无效的请求格式" }, 400);
+  }
+
+  const { username, password } = body;
 
   // 验证输入
   if (!username || !password) {
+    console.log("登录失败: 用户名或密码为空");
     return c.json({ success: false, message: "用户名和密码不能为空" }, 400);
   }
+
+  console.log(`尝试登录: ${username}`);
 
   // 从 KV 存储中获取用户
   const userResult = await kv.get(["users", username]);
   const user = userResult.value;
 
   if (!user) {
+    console.log(`登录失败: 用户不存在 - ${username}`);
     return c.json({ success: false, message: "用户名或密码错误" }, 401);
   }
 
+  console.log(`用户存在: ${username}, 验证密码中...`);
+  console.log(`密码哈希信息: 长度=${user.passwordHash ? user.passwordHash.length : 0}`);
+
   // 验证密码
-  const isValid = await verifyPassword(password, user.passwordHash);
-  if (!isValid) {
-    return c.json({ success: false, message: "用户名或密码错误" }, 401);
+  try {
+    const inputPasswordHash = await simpleHash(password);
+    const storedPasswordHash = user.passwordHash;
+
+    console.log(`密码哈希比较:
+      - 输入密码哈希: ${inputPasswordHash.substring(0, 10)}...
+      - 存储密码哈希: ${storedPasswordHash.substring(0, 10)}...
+    `);
+
+    const isValid = inputPasswordHash === storedPasswordHash;
+
+    if (!isValid) {
+      console.log(`登录失败: 密码不匹配 - ${username}`);
+      return c.json({ success: false, message: "用户名或密码错误" }, 401);
+    }
+  } catch (error) {
+    console.error(`密码验证错误:`, error);
+    return c.json({ success: false, message: "验证失败，请稍后重试" }, 500);
   }
+
+  console.log(`登录成功: ${username}`);
 
   // 创建会话
   const sessionId = nanoid();
@@ -226,15 +275,43 @@ app.post("/api/register", async (c) => {
 // 处理账户设置更新
 app.post("/api/settings/account", authMiddleware, async (c) => {
   const user = c.get("user");
-  const { name, password } = await c.req.parseBody();
+  let body;
+
+  // 尝试解析不同格式的请求体
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      body = await c.req.json();
+    } else {
+      body = await c.req.parseBody();
+    }
+  } catch (error) {
+    console.error("解析请求体失败:", error);
+    return c.json({ success: false, message: "无效的请求格式" }, 400);
+  }
+
+  const { name, password } = body;
+
+  // 记录请求信息（不包含密码）
+  console.log("收到账户设置更新请求:", {
+    username: user.username,
+    name,
+    hasPassword: !!password
+  });
 
   // 获取用户完整信息
   const userResult = await kv.get(["users", user.username]);
   if (!userResult.value) {
+    console.error("用户不存在:", user.username);
     return c.json({ success: false, message: "用户不存在" }, 404);
   }
 
   const userData = userResult.value;
+  console.log("获取到用户数据:", {
+    username: userData.username,
+    id: userData.id,
+    hasPasswordHash: !!userData.passwordHash
+  });
 
   // 更新用户信息
   const updatedUser = {
@@ -245,22 +322,38 @@ app.post("/api/settings/account", authMiddleware, async (c) => {
 
   // 如果提供了新密码，更新密码
   if (password && password.trim() !== "") {
-    updatedUser.passwordHash = await simpleHash(password);
+    const newPasswordHash = await simpleHash(password);
+    console.log("生成新密码哈希:", {
+      username: user.username,
+      oldHashLength: userData.passwordHash ? userData.passwordHash.length : 0,
+      newHashLength: newPasswordHash.length
+    });
+
+    updatedUser.passwordHash = newPasswordHash;
     updatedUser.passwordChanged = true; // 标记密码已修改
     console.log("用户密码已更新:", user.username);
   }
 
   // 保存更新后的用户信息
-  await kv.set(["users", user.username], updatedUser);
+  try {
+    await kv.set(["users", user.username], updatedUser);
+    console.log("用户信息已保存到KV存储:", user.username);
+  } catch (error) {
+    console.error("保存用户信息失败:", error);
+    return c.json({ success: false, message: "保存用户信息失败" }, 500);
+  }
 
   // 更新会话中的用户信息
   const sessionId = getCookie(c, "session");
-  const sessionResult = await kv.get(["sessions", sessionId]);
+  if (sessionId) {
+    const sessionResult = await kv.get(["sessions", sessionId]);
 
-  if (sessionResult.value) {
-    const sessionData = sessionResult.value;
-    sessionData.user.name = updatedUser.name;
-    await kv.set(["sessions", sessionId], sessionData);
+    if (sessionResult.value) {
+      const sessionData = sessionResult.value;
+      sessionData.user.name = updatedUser.name;
+      await kv.set(["sessions", sessionId], sessionData);
+      console.log("会话信息已更新:", sessionId);
+    }
   }
 
   return c.json({
