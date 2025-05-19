@@ -403,28 +403,82 @@ app.post("/api/settings/backup", authMiddleware, async (c) => {
 // 解析MySQL连接字符串
 function parseMySQLConnectionString(connectionString) {
   try {
-    // 基本格式: user:password@tcp(host:port)/database
+    console.log("开始解析连接字符串:", connectionString);
     const result = {};
+    let cleanString = connectionString.trim();
 
-    // 提取用户名和密码
-    const authPart = connectionString.split('@')[0];
-    if (authPart) {
+    // 移除可能的协议前缀 (mysql://)
+    if (cleanString.startsWith('mysql://')) {
+      cleanString = cleanString.substring(8);
+    }
+
+    // 处理查询参数
+    let mainPart = cleanString;
+    let queryParams = {};
+
+    if (cleanString.includes('?')) {
+      const parts = cleanString.split('?');
+      mainPart = parts[0];
+
+      // 解析查询参数
+      if (parts[1]) {
+        const queryParts = parts[1].split('&');
+        queryParts.forEach(param => {
+          const [key, value] = param.split('=');
+          if (key && value) {
+            queryParams[key.toLowerCase()] = value;
+          }
+        });
+      }
+
+      // 存储SSL相关参数
+      if (queryParams['ssl-mode'] || queryParams['sslmode']) {
+        result.sslMode = queryParams['ssl-mode'] || queryParams['sslmode'];
+      }
+    }
+
+    // 提取认证信息和主机信息
+    const atIndex = mainPart.lastIndexOf('@');
+    if (atIndex !== -1) {
+      // 提取用户名和密码
+      const authPart = mainPart.substring(0, atIndex);
       const authParts = authPart.split(':');
       result.user = authParts[0];
-      result.password = authParts[1] || '';
+      result.password = authParts.length > 1 ? authParts.slice(1).join(':') : ''; // 处理密码中可能包含冒号的情况
+
+      // 提取主机、端口和数据库
+      const hostPart = mainPart.substring(atIndex + 1);
+
+      // 检查是否使用tcp(host:port)格式
+      const tcpMatch = hostPart.match(/tcp\(([^:]+):(\d+)\)\/(.+)/);
+      if (tcpMatch) {
+        result.host = tcpMatch[1];
+        result.port = parseInt(tcpMatch[2]);
+        result.databases = tcpMatch[3].split(',').map(db => db.trim());
+      } else {
+        // 使用标准URL格式 host:port/database
+        const hostPortDbParts = hostPart.split('/');
+
+        if (hostPortDbParts.length > 0) {
+          const hostPortPart = hostPortDbParts[0];
+          const hostPortParts = hostPortPart.split(':');
+
+          result.host = hostPortParts[0];
+          result.port = hostPortParts.length > 1 ? parseInt(hostPortParts[1]) : 3306;
+
+          // 提取数据库名称
+          if (hostPortDbParts.length > 1) {
+            result.databases = hostPortDbParts[1].split(',').map(db => db.trim());
+          }
+        }
+      }
     }
 
-    // 提取主机和端口
-    const hostMatch = connectionString.match(/tcp\(([^:]+):(\d+)\)/);
-    if (hostMatch) {
-      result.host = hostMatch[1];
-      result.port = parseInt(hostMatch[2]);
-    }
+    console.log("解析结果:", result);
 
-    // 提取数据库名称
-    const dbMatch = connectionString.match(/\/([^?]+)/);
-    if (dbMatch) {
-      result.databases = dbMatch[1].split(',').map(db => db.trim());
+    // 验证必要字段是否存在
+    if (!result.host || !result.user || !result.databases || !result.databases.length) {
+      console.warn("连接字符串解析不完整:", result);
     }
 
     return result;
@@ -521,6 +575,11 @@ app.post("/api/databases", authMiddleware, async (c) => {
     createdAt: new Date().toISOString()
   };
 
+  // 添加SSL模式（如果有）
+  if (body.sslMode) {
+    newConfig.sslMode = body.sslMode;
+  }
+
   // 添加到配置列表
   dbConfigs.push(newConfig);
 
@@ -590,6 +649,11 @@ app.put("/api/databases/:id", authMiddleware, async (c) => {
     updatedAt: new Date().toISOString()
   };
 
+  // 更新SSL模式（如果有）
+  if (body.sslMode !== undefined) {
+    dbConfigs[configIndex].sslMode = body.sslMode;
+  }
+
   // 保存配置
   await kv.set(["dbConfigs", user.id], dbConfigs);
 
@@ -634,14 +698,37 @@ app.post("/api/databases/:id/test", authMiddleware, async (c) => {
   }
 
   try {
-    // 尝试连接数据库
-    const connection = await mysql.createConnection({
+    // 准备连接配置
+    const connectionConfig = {
       host: dbConfig.host,
       port: dbConfig.port,
       user: dbConfig.user,
       password: dbConfig.password,
       connectTimeout: 10000
+    };
+
+    // 添加SSL配置（如果有）
+    if (dbConfig.sslMode) {
+      console.log(`使用SSL模式连接: ${dbConfig.sslMode}`);
+      connectionConfig.ssl = {};
+
+      if (dbConfig.sslMode.toUpperCase() === 'REQUIRED' || dbConfig.sslMode.toUpperCase() === 'TRUE') {
+        connectionConfig.ssl = { rejectUnauthorized: true };
+      } else if (dbConfig.sslMode.toUpperCase() === 'PREFERRED') {
+        connectionConfig.ssl = { rejectUnauthorized: false };
+      }
+    }
+
+    console.log("尝试连接数据库:", {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.user,
+      hasPassword: !!dbConfig.password,
+      hasSSL: !!connectionConfig.ssl
     });
+
+    // 尝试连接数据库
+    const connection = await mysql.createConnection(connectionConfig);
 
     // 测试连接
     await connection.query("SELECT 1");
@@ -1093,7 +1180,8 @@ async function executeBackup(task) {
             dbConfig.port,
             dbConfig.user,
             dbConfig.password,
-            dbName
+            dbName,
+            dbConfig.sslMode
           );
 
           // 压缩备份内容
@@ -1199,19 +1287,34 @@ async function executeBackup(task) {
 }
 
 // 使用直接查询方式备份MySQL数据库
-async function fallbackBackup(host, port, user, password, database) {
+async function fallbackBackup(host, port, user, password, database, sslMode) {
   try {
     logInfo(`使用直接查询方式备份数据库: ${database}`);
 
-    // 创建数据库连接
-    const connection = await mysql.createConnection({
+    // 准备连接配置
+    const connectionConfig = {
       host,
       port,
       user,
       password,
       database,
       multipleStatements: true
-    });
+    };
+
+    // 添加SSL配置（如果有）
+    if (sslMode) {
+      logInfo(`使用SSL模式连接: ${sslMode}`);
+      connectionConfig.ssl = {};
+
+      if (sslMode.toUpperCase() === 'REQUIRED' || sslMode.toUpperCase() === 'TRUE') {
+        connectionConfig.ssl = { rejectUnauthorized: true };
+      } else if (sslMode.toUpperCase() === 'PREFERRED') {
+        connectionConfig.ssl = { rejectUnauthorized: false };
+      }
+    }
+
+    // 创建数据库连接
+    const connection = await mysql.createConnection(connectionConfig);
 
     // 获取所有表
     const [tables] = await connection.query("SHOW TABLES");

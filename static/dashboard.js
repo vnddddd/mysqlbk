@@ -279,8 +279,12 @@ function showDatabaseModal(dbData = null) {
             <div class="tab-content active" id="simple-tab">
               <div class="form-group">
                 <label for="dbConnectionString">连接字符串</label>
-                <input type="text" id="dbConnectionString" name="connectionString" placeholder="user:password@tcp(host:port)/database" value="">
-                <div class="form-hint">例如: user:password@tcp(mysql.example.com:3306)/dbname</div>
+                <input type="text" id="dbConnectionString" name="connectionString" placeholder="user:password@host:port/database" value="">
+                <div class="form-hint">支持多种格式:</div>
+                <div class="form-hint">1. user:password@host:port/database</div>
+                <div class="form-hint">2. mysql://user:password@host:port/database</div>
+                <div class="form-hint">3. user:password@tcp(host:port)/database</div>
+                <div class="form-hint">4. 带SSL参数: mysql://user:password@host:port/database?ssl-mode=REQUIRED</div>
               </div>
             </div>
 
@@ -366,30 +370,78 @@ function showDatabaseModal(dbData = null) {
   // 连接字符串解析函数
   function parseConnectionString(connectionString) {
     try {
-      // 基本格式: user:password@tcp(host:port)/database
+      console.log("开始解析连接字符串:", connectionString);
       const result = {};
+      let cleanString = connectionString.trim();
 
-      // 提取用户名和密码
-      const authPart = connectionString.split('@')[0];
-      if (authPart) {
+      // 移除可能的协议前缀 (mysql://)
+      if (cleanString.startsWith('mysql://')) {
+        cleanString = cleanString.substring(8);
+      }
+
+      // 处理查询参数
+      let mainPart = cleanString;
+      let queryParams = {};
+
+      if (cleanString.includes('?')) {
+        const parts = cleanString.split('?');
+        mainPart = parts[0];
+
+        // 解析查询参数
+        if (parts[1]) {
+          const queryParts = parts[1].split('&');
+          queryParts.forEach(param => {
+            const [key, value] = param.split('=');
+            if (key && value) {
+              queryParams[key.toLowerCase()] = value;
+            }
+          });
+        }
+
+        // 存储SSL相关参数
+        if (queryParams['ssl-mode'] || queryParams['sslmode']) {
+          result.sslMode = queryParams['ssl-mode'] || queryParams['sslmode'];
+        }
+      }
+
+      // 提取认证信息和主机信息
+      const atIndex = mainPart.lastIndexOf('@');
+      if (atIndex !== -1) {
+        // 提取用户名和密码
+        const authPart = mainPart.substring(0, atIndex);
         const authParts = authPart.split(':');
         result.user = authParts[0];
-        result.password = authParts[1] || '';
+        result.password = authParts.length > 1 ? authParts.slice(1).join(':') : ''; // 处理密码中可能包含冒号的情况
+
+        // 提取主机、端口和数据库
+        const hostPart = mainPart.substring(atIndex + 1);
+
+        // 检查是否使用tcp(host:port)格式
+        const tcpMatch = hostPart.match(/tcp\(([^:]+):(\d+)\)\/(.+)/);
+        if (tcpMatch) {
+          result.host = tcpMatch[1];
+          result.port = tcpMatch[2];
+          result.databases = tcpMatch[3].split(',').map(db => db.trim());
+        } else {
+          // 使用标准URL格式 host:port/database
+          const hostPortDbParts = hostPart.split('/');
+
+          if (hostPortDbParts.length > 0) {
+            const hostPortPart = hostPortDbParts[0];
+            const hostPortParts = hostPortPart.split(':');
+
+            result.host = hostPortParts[0];
+            result.port = hostPortParts.length > 1 ? hostPortParts[1] : '3306';
+
+            // 提取数据库名称
+            if (hostPortDbParts.length > 1) {
+              result.databases = hostPortDbParts[1].split(',').map(db => db.trim());
+            }
+          }
+        }
       }
 
-      // 提取主机和端口
-      const hostMatch = connectionString.match(/tcp\(([^:]+):(\d+)\)/);
-      if (hostMatch) {
-        result.host = hostMatch[1];
-        result.port = hostMatch[2];
-      }
-
-      // 提取数据库名称
-      const dbMatch = connectionString.match(/\/([^?]+)/);
-      if (dbMatch) {
-        result.databases = dbMatch[1].split(',');
-      }
-
+      console.log("解析结果:", result);
       return result;
     } catch (error) {
       console.error('解析连接字符串失败:', error);
