@@ -308,6 +308,35 @@ app.post("/api/settings/backup", authMiddleware, async (c) => {
 });
 
 // 数据库配置API
+// 获取所有数据库配置
+app.get("/api/databases", authMiddleware, async (c) => {
+  const user = c.get("user");
+
+  // 获取用户的数据库配置
+  const dbConfigsResult = await kv.get(["dbConfigs", user.id]);
+  const dbConfigs = dbConfigsResult.value || [];
+
+  return c.json({ success: true, databases: dbConfigs });
+});
+
+// 获取单个数据库配置
+app.get("/api/databases/:id", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  // 获取用户的数据库配置
+  const dbConfigsResult = await kv.get(["dbConfigs", user.id]);
+  const dbConfigs = dbConfigsResult.value || [];
+
+  // 查找指定的配置
+  const database = dbConfigs.find(config => config.id === id);
+  if (!database) {
+    return c.json({ success: false, message: "未找到指定的数据库配置" }, 404);
+  }
+
+  return c.json({ success: true, database });
+});
+
 app.post("/api/databases", authMiddleware, async (c) => {
   const user = c.get("user");
   const data = await c.req.parseBody();
@@ -397,7 +426,80 @@ app.delete("/api/databases/:id", authMiddleware, async (c) => {
   return c.json({ success: true });
 });
 
+// 测试数据库连接
+app.post("/api/databases/:id/test", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  // 获取数据库配置
+  const dbConfigsResult = await kv.get(["dbConfigs", user.id]);
+  const dbConfigs = dbConfigsResult.value || [];
+
+  // 查找指定的配置
+  const dbConfig = dbConfigs.find(config => config.id === id);
+  if (!dbConfig) {
+    return c.json({ success: false, message: "未找到指定的数据库配置" }, 404);
+  }
+
+  try {
+    // 尝试连接数据库
+    const connection = await mysql.createConnection({
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.user,
+      password: dbConfig.password,
+      connectTimeout: 10000
+    });
+
+    // 测试连接
+    await connection.query("SELECT 1");
+
+    // 关闭连接
+    await connection.end();
+
+    return c.json({
+      success: true,
+      message: `成功连接到 ${dbConfig.host}:${dbConfig.port}`
+    });
+  } catch (error) {
+    logError(`测试数据库连接失败: ${dbConfig.host}:${dbConfig.port}`, error);
+    return c.json({
+      success: false,
+      message: `连接失败: ${error.message}`
+    }, 500);
+  }
+});
+
 // 云存储配置API
+// 获取所有存储配置
+app.get("/api/storage", authMiddleware, async (c) => {
+  const user = c.get("user");
+
+  // 获取用户的存储配置
+  const storageConfigsResult = await kv.get(["storageConfigs", user.id]);
+  const storageConfigs = storageConfigsResult.value || [];
+
+  return c.json({ success: true, storage: storageConfigs });
+});
+
+// 获取单个存储配置
+app.get("/api/storage/:id", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  // 获取用户的存储配置
+  const storageConfigsResult = await kv.get(["storageConfigs", user.id]);
+  const storageConfigs = storageConfigsResult.value || [];
+
+  // 查找指定的配置
+  const storage = storageConfigs.find(config => config.id === id);
+  if (!storage) {
+    return c.json({ success: false, message: "未找到指定的存储配置" }, 404);
+  }
+
+  return c.json({ success: true, storage });
+});
+
 app.post("/api/storage", authMiddleware, async (c) => {
   const user = c.get("user");
   const data = await c.req.parseBody();
@@ -500,6 +602,69 @@ app.delete("/api/storage/:id", authMiddleware, async (c) => {
   return c.json({ success: true });
 });
 
+// 测试存储连接
+app.post("/api/storage/:id/test", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  // 获取存储配置
+  const storageConfigsResult = await kv.get(["storageConfigs", user.id]);
+  const storageConfigs = storageConfigsResult.value || [];
+
+  // 查找指定的配置
+  const storageConfig = storageConfigs.find(config => config.id === id);
+  if (!storageConfig) {
+    return c.json({ success: false, message: "未找到指定的存储配置" }, 404);
+  }
+
+  try {
+    // 根据存储类型测试连接
+    if (storageConfig.type === "backblaze") {
+      // 测试Backblaze B2连接
+      const authUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+
+      // 创建认证头
+      const credentials = `${storageConfig.applicationKeyId}:${storageConfig.applicationKey}`;
+      const encodedCredentials = btoa(credentials);
+
+      // 发送认证请求
+      const authResponse = await fetch(authUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Basic ${encodedCredentials}`
+        }
+      });
+
+      if (!authResponse.ok) {
+        const errorData = await authResponse.json();
+        return c.json({
+          success: false,
+          message: `Backblaze B2认证失败: ${errorData.message || errorData.code || "未知错误"}`
+        }, 500);
+      }
+
+      // 成功获取认证信息，不需要使用返回的数据
+      await authResponse.json();
+
+      return c.json({
+        success: true,
+        message: `成功连接到Backblaze B2，存储桶: ${storageConfig.bucketName}`
+      });
+    } else {
+      return c.json({
+        success: false,
+        message: `不支持的存储类型: ${storageConfig.type}`
+      }, 400);
+    }
+  } catch (error) {
+    logError(`测试存储连接失败: ${storageConfig.type}`, error);
+    return c.json({
+      success: false,
+      message: `连接失败: ${error.message}`
+    }, 500);
+  }
+});
+
 // 备份执行API
 app.post("/api/backup", authMiddleware, async (c) => {
   const user = c.get("user");
@@ -595,6 +760,107 @@ app.get("/api/backup/history", authMiddleware, async (c) => {
 
   return c.json({ success: true, history: backupHistory });
 });
+
+// 上传文件到Backblaze B2
+async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, bucketName) {
+  try {
+    // 第1步：获取授权信息
+    const authUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+
+    // 创建认证头
+    const credentials = `${applicationKeyId}:${applicationKey}`;
+    const encodedCredentials = btoa(credentials);
+
+    const authResponse = await fetch(authUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Basic ${encodedCredentials}`
+      }
+    });
+
+    if (!authResponse.ok) {
+      const errorData = await authResponse.json();
+      throw new Error(`B2认证失败: ${errorData.message || errorData.code || "未知错误"}`);
+    }
+
+    const authData = await authResponse.json();
+
+    // 第2步：获取上传URL
+    const getUploadUrlUrl = `${authData.apiUrl}/b2api/v2/b2_get_upload_url`;
+
+    // 首先获取bucket ID
+    const listBucketsUrl = `${authData.apiUrl}/b2api/v2/b2_list_buckets`;
+    const listBucketsResponse = await fetch(listBucketsUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": authData.authorizationToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        accountId: authData.accountId
+      })
+    });
+
+    if (!listBucketsResponse.ok) {
+      const errorData = await listBucketsResponse.json();
+      throw new Error(`获取存储桶列表失败: ${errorData.message || errorData.code || "未知错误"}`);
+    }
+
+    const bucketsData = await listBucketsResponse.json();
+    const bucket = bucketsData.buckets.find(b => b.bucketName === bucketName);
+
+    if (!bucket) {
+      throw new Error(`未找到存储桶: ${bucketName}`);
+    }
+
+    const bucketId = bucket.bucketId;
+
+    // 获取上传URL
+    const getUploadUrlResponse = await fetch(getUploadUrlUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": authData.authorizationToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        bucketId: bucketId
+      })
+    });
+
+    if (!getUploadUrlResponse.ok) {
+      const errorData = await getUploadUrlResponse.json();
+      throw new Error(`获取上传URL失败: ${errorData.message || errorData.code || "未知错误"}`);
+    }
+
+    const uploadUrlData = await getUploadUrlResponse.json();
+
+    // 第3步：上传文件
+    const uploadResponse = await fetch(uploadUrlData.uploadUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": uploadUrlData.authorizationToken,
+        "Content-Type": "application/octet-stream",
+        "Content-Length": fileData.length.toString(),
+        "X-Bz-File-Name": encodeURIComponent(fileName),
+        "X-Bz-Content-Sha1": "do_not_verify" // 在生产环境中应该计算实际的SHA1
+      },
+      body: fileData
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json();
+      throw new Error(`文件上传失败: ${errorData.message || errorData.code || "未知错误"}`);
+    }
+
+    const uploadResult = await uploadResponse.json();
+    logInfo(`文件上传成功: ${fileName}, 大小: ${fileData.length} 字节`);
+
+    return uploadResult;
+  } catch (error) {
+    logError(`上传到B2失败: ${fileName}`, error);
+    throw error;
+  }
+}
 
 // 执行备份任务
 async function executeBackup(task) {
@@ -736,6 +1002,94 @@ async function executeBackup(task) {
       completedAt: new Date().toISOString()
     });
 
+    throw error;
+  }
+}
+
+// 使用直接查询方式备份MySQL数据库
+async function fallbackBackup(host, port, user, password, database) {
+  try {
+    logInfo(`使用直接查询方式备份数据库: ${database}`);
+
+    // 创建数据库连接
+    const connection = await mysql.createConnection({
+      host,
+      port,
+      user,
+      password,
+      database,
+      multipleStatements: true
+    });
+
+    // 获取所有表
+    const [tables] = await connection.query("SHOW TABLES");
+    const tableNames = tables.map(table => Object.values(table)[0]);
+
+    // 构建备份头
+    let backupContent = `-- MySQL备份 - 数据库: ${database}\n`;
+    backupContent += `-- 生成时间: ${new Date().toISOString()}\n`;
+    backupContent += `-- 服务器版本: ${host}:${port}\n\n`;
+
+    backupContent += `SET NAMES utf8mb4;\n`;
+    backupContent += `SET FOREIGN_KEY_CHECKS = 0;\n\n`;
+
+    // 获取每个表的创建语句和数据
+    for (const tableName of tableNames) {
+      // 获取表结构
+      const [createTable] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
+      const createTableSql = createTable[0]['Create Table'];
+
+      backupContent += `-- ----------------------------\n`;
+      backupContent += `-- 表结构 \`${tableName}\`\n`;
+      backupContent += `-- ----------------------------\n`;
+      backupContent += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
+      backupContent += `${createTableSql};\n\n`;
+
+      // 获取表数据
+      const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
+
+      if (rows.length > 0) {
+        backupContent += `-- ----------------------------\n`;
+        backupContent += `-- 表数据 \`${tableName}\`\n`;
+        backupContent += `-- ----------------------------\n`;
+
+        // 构建INSERT语句
+        const columns = Object.keys(rows[0]);
+        const columnList = columns.map(col => `\`${col}\``).join(', ');
+
+        // 分批处理数据，避免生成过大的SQL语句
+        const batchSize = 100;
+        for (let i = 0; i < rows.length; i += batchSize) {
+          const batch = rows.slice(i, i + batchSize);
+
+          backupContent += `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`;
+
+          const valueStrings = batch.map(row => {
+            const values = columns.map(col => {
+              const value = row[col];
+              if (value === null) return 'NULL';
+              if (typeof value === 'number') return value;
+              if (typeof value === 'boolean') return value ? 1 : 0;
+              if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+              return `'${String(value).replace(/'/g, "''")}'`;
+            });
+            return `(${values.join(', ')})`;
+          });
+
+          backupContent += valueStrings.join(',\n') + ';\n\n';
+        }
+      }
+    }
+
+    backupContent += `SET FOREIGN_KEY_CHECKS = 1;\n`;
+
+    // 关闭连接
+    await connection.end();
+
+    logInfo(`数据库 ${database} 备份完成，大小: ${backupContent.length} 字节`);
+    return backupContent;
+  } catch (error) {
+    logError(`备份数据库 ${database} 失败`, error);
     throw error;
   }
 }
