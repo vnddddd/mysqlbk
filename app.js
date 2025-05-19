@@ -7,7 +7,7 @@ import { gzip } from "https://deno.land/x/compress@v0.4.5/mod.ts";
 import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
 import { serveStatic } from "https://deno.land/x/hono@v3.11.7/middleware.ts";
 import { getCookie, setCookie, deleteCookie } from "https://deno.land/x/hono@v3.11.7/helper/cookie/index.ts";
-import { html } from "https://deno.land/x/hono@v3.11.7/helper/html/index.ts";
+import { html, raw } from "https://deno.land/x/hono@v3.11.7/helper/html/index.ts";
 import { nanoid } from "https://deno.land/x/nanoid@v3.0.0/mod.ts";
 
 // 初始化 KV 存储
@@ -247,6 +247,7 @@ app.post("/api/settings/account", authMiddleware, async (c) => {
   if (password && password.trim() !== "") {
     updatedUser.passwordHash = await simpleHash(password);
     updatedUser.passwordChanged = true; // 标记密码已修改
+    console.log("用户密码已更新:", user.username);
   }
 
   // 保存更新后的用户信息
@@ -842,11 +843,11 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
       <main class="dashboard-main">
         <section id="overview" class="dashboard-section active">
           <h2>系统概览</h2>
-          ${firstLogin ? `
+          ${firstLogin ? raw(`
           <div class="alert alert-warning">
             <strong>首次登录提示：</strong> 您正在使用系统生成的初始密码登录，请立即前往系统设置修改您的密码以确保账户安全。
           </div>
-          ` : ''}
+          `) : ''}
           <div class="overview-cards">
             <div class="card">
               <h3>数据库</h3>
@@ -878,7 +879,7 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           <div class="recent-activity">
             <h3>最近活动</h3>
             <div class="activity-list">
-              ${backupHistory.length > 0 ? backupHistory.slice(0, 5).map(history => `
+              ${backupHistory.length > 0 ? raw(backupHistory.slice(0, 5).map(history => `
                 <div class="activity-item">
                   <div class="activity-icon ${history.success ? 'success' : 'error'}"></div>
                   <div class="activity-details">
@@ -886,13 +887,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                     <div class="activity-time">${new Date(history.timestamp).toLocaleString()}</div>
                   </div>
                 </div>
-              `).join('') : `
+              `).join('')) : raw(`
                 <div class="empty-state">
                   <div class="empty-icon"></div>
                   <h3>暂无活动记录</h3>
                   <p>执行备份后，活动记录将显示在这里</p>
                 </div>
-              `}
+              `)}
             </div>
           </div>
         </section>
@@ -905,7 +906,7 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           </div>
 
           <div class="database-list">
-            ${dbConfigs.length > 0 ? dbConfigs.map(db => `
+            ${dbConfigs.length > 0 ? raw(dbConfigs.map(db => `
               <div class="database-item" data-id="${db.id}">
                 <div class="database-info">
                   <h3>${db.name}</h3>
@@ -921,13 +922,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                   <button class="btn btn-icon delete-db" title="删除">删除</button>
                 </div>
               </div>
-            `).join('') : `
+            `).join('')) : raw(`
               <div class="empty-state">
                 <div class="empty-icon"></div>
                 <h3>暂无数据库配置</h3>
                 <p>点击"添加数据库"按钮开始配置您的第一个数据库连接</p>
               </div>
-            `}
+            `)}
           </div>
         </section>
 
@@ -939,15 +940,15 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           </div>
 
           <div class="storage-list">
-            ${storageConfigs.length > 0 ? storageConfigs.map(storage => `
+            ${storageConfigs.length > 0 ? raw(storageConfigs.map(storage => `
               <div class="storage-item" data-id="${storage.id}">
                 <div class="storage-info">
                   <h3>${storage.name}</h3>
                   <div class="storage-details">
                     <span>类型: ${storage.type}</span>
-                    ${storage.type === 'backblaze' ? `
+                    ${storage.type === 'backblaze' ? raw(`
                       <span>存储桶: ${storage.bucketName}</span>
-                    ` : ''}
+                    `) : ''}
                     <span>状态: ${storage.active ? '活跃' : '未激活'}</span>
                   </div>
                 </div>
@@ -957,13 +958,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                   <button class="btn btn-icon delete-storage" title="删除">删除</button>
                 </div>
               </div>
-            `).join('') : `
+            `).join('')) : raw(`
               <div class="empty-state">
                 <div class="empty-icon"></div>
                 <h3>暂无存储配置</h3>
                 <p>点击"添加存储"按钮开始配置您的第一个云存储连接</p>
               </div>
-            `}
+            `)}
           </div>
         </section>
 
@@ -981,7 +982,7 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
           </div>
 
           <div class="history-list">
-            ${backupHistory.length > 0 ? `
+            ${backupHistory.length > 0 ? raw(`
               <div class="history-table">
                 <div class="history-header">
                   <div class="history-cell">状态</div>
@@ -1009,13 +1010,13 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
                   </div>
                 `).join('')}
               </div>
-            ` : `
+            `) : raw(`
               <div class="empty-state">
                 <div class="empty-icon"></div>
                 <h3>暂无备份历史</h3>
                 <p>执行备份后，历史记录将显示在这里</p>
               </div>
-            `}
+            `)}
           </div>
         </section>
 

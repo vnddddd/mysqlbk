@@ -212,6 +212,7 @@ function showDatabaseModal(dbData = null) {
   // 创建模态框
   const modal = document.createElement('div');
   modal.className = 'modal';
+  modal.style.display = 'block'; // 确保模态框显示
   modal.innerHTML = `
     <div class="modal-content">
       <div class="modal-header">
@@ -308,4 +309,404 @@ function showDatabaseModal(dbData = null) {
       dbFormError.textContent = '请求失败，请稍后重试';
     }
   });
+}
+
+// 显示云存储配置模态框
+function showStorageModal(storageData = null) {
+  // 创建模态框
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'block'; // 确保模态框显示
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>${storageData ? '编辑存储' : '添加存储'}</h3>
+        <button class="modal-close close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="storageForm">
+          <div class="form-group">
+            <label for="storageName">名称</label>
+            <input type="text" id="storageName" name="name" value="${storageData?.name || ''}" required>
+          </div>
+          <div class="form-group">
+            <label for="storageType">存储类型</label>
+            <select id="storageType" name="type" class="form-select" required>
+              <option value="backblaze" ${storageData?.type === 'backblaze' ? 'selected' : ''}>Backblaze B2</option>
+            </select>
+          </div>
+          <div id="backblazeFields">
+            <div class="form-group">
+              <label for="applicationKeyId">Application Key ID</label>
+              <input type="text" id="applicationKeyId" name="applicationKeyId" value="${storageData?.applicationKeyId || ''}" required>
+            </div>
+            <div class="form-group">
+              <label for="applicationKey">Application Key</label>
+              <input type="password" id="applicationKey" name="applicationKey" value="${storageData?.applicationKey || ''}">
+              ${storageData ? '<div class="form-hint">留空表示不修改密钥</div>' : ''}
+            </div>
+            <div class="form-group">
+              <label for="bucketName">存储桶名称</label>
+              <input type="text" id="bucketName" name="bucketName" value="${storageData?.bucketName || ''}" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="storageActive">
+              <input type="checkbox" id="storageActive" name="active" ${storageData?.active ? 'checked' : ''}>
+              设为活跃存储
+            </label>
+            <div class="form-hint">活跃存储将用于备份文件上传</div>
+          </div>
+          <div class="form-error" id="storageFormError"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">取消</button>
+        <button type="submit" class="btn btn-primary" form="storageForm">${storageData ? '保存' : '添加'}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 关闭模态框
+  const closeButtons = modal.querySelectorAll('.close-modal');
+  closeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+  });
+
+  // 点击模态框外部关闭
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+
+  // 表单提交
+  const form = modal.querySelector('#storageForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const storageFormError = document.getElementById('storageFormError');
+
+    // 处理复选框
+    formData.set('active', formData.has('active') ? 'true' : 'false');
+
+    try {
+      const url = storageData ? `/api/storage/${storageData.id}` : '/api/storage';
+      const method = storageData ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(formData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // 成功，关闭模态框并刷新页面
+        document.body.removeChild(modal);
+        window.location.reload();
+      } else {
+        // 失败，显示错误信息
+        storageFormError.textContent = data.message || '操作失败，请稍后重试';
+      }
+    } catch (error) {
+      console.error('请求失败:', error);
+      storageFormError.textContent = '请求失败，请稍后重试';
+    }
+  });
+}
+
+// 显示备份模态框
+function showBackupModal() {
+  // 创建模态框
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'block'; // 确保模态框显示
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>执行备份</h3>
+        <button class="modal-close close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="backupForm">
+          <div class="form-group">
+            <label>选择数据库</label>
+            <div class="checkbox-group" id="databaseCheckboxes">
+              <div class="loading">加载数据库列表...</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="backupStorage">选择存储</label>
+            <select id="backupStorage" name="storageId" class="form-select" required>
+              <option value="">-- 选择存储 --</option>
+            </select>
+          </div>
+          <div class="form-error" id="backupFormError"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal">取消</button>
+        <button type="submit" class="btn btn-primary" form="backupForm">开始备份</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 关闭模态框
+  const closeButtons = modal.querySelectorAll('.close-modal');
+  closeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+  });
+
+  // 点击模态框外部关闭
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+
+  // 加载数据库和存储列表
+  loadBackupFormData();
+
+  // 表单提交
+  const form = modal.querySelector('#backupForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const backupFormError = document.getElementById('backupFormError');
+
+    // 获取选中的数据库
+    const selectedDatabases = [];
+    document.querySelectorAll('input[name="databases"]:checked').forEach(checkbox => {
+      selectedDatabases.push(checkbox.value);
+    });
+
+    if (selectedDatabases.length === 0) {
+      backupFormError.textContent = '请至少选择一个数据库';
+      return;
+    }
+
+    formData.delete('databases');
+    selectedDatabases.forEach(db => {
+      formData.append('databases', db);
+    });
+
+    try {
+      const response = await fetch('/api/backup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(formData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // 成功，关闭模态框并刷新页面
+        document.body.removeChild(modal);
+        alert('备份任务已提交，请在备份历史中查看结果');
+        window.location.reload();
+      } else {
+        // 失败，显示错误信息
+        backupFormError.textContent = data.message || '操作失败，请稍后重试';
+      }
+    } catch (error) {
+      console.error('请求失败:', error);
+      backupFormError.textContent = '请求失败，请稍后重试';
+    }
+  });
+}
+
+// 加载备份表单数据
+async function loadBackupFormData() {
+  try {
+    // 加载数据库列表
+    const dbResponse = await fetch('/api/databases');
+    const dbData = await dbResponse.json();
+
+    const databaseCheckboxes = document.getElementById('databaseCheckboxes');
+    databaseCheckboxes.innerHTML = '';
+
+    if (dbData.success && dbData.databases.length > 0) {
+      dbData.databases.forEach(db => {
+        const checkbox = document.createElement('div');
+        checkbox.className = 'checkbox-item';
+        checkbox.innerHTML = `
+          <label>
+            <input type="checkbox" name="databases" value="${db.id}">
+            ${db.name} (${db.databases.join(', ')})
+          </label>
+        `;
+        databaseCheckboxes.appendChild(checkbox);
+      });
+    } else {
+      databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
+    }
+
+    // 加载存储列表
+    const storageResponse = await fetch('/api/storage');
+    const storageData = await storageResponse.json();
+
+    const storageSelect = document.getElementById('backupStorage');
+
+    if (storageData.success && storageData.storage.length > 0) {
+      storageData.storage.forEach(storage => {
+        const option = document.createElement('option');
+        option.value = storage.id;
+        option.textContent = storage.name;
+        if (storage.active) {
+          option.selected = true;
+        }
+        storageSelect.appendChild(option);
+      });
+    } else {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = '没有可用的存储配置';
+      option.disabled = true;
+      storageSelect.innerHTML = '';
+      storageSelect.appendChild(option);
+    }
+  } catch (error) {
+    console.error('加载数据失败:', error);
+    document.getElementById('databaseCheckboxes').innerHTML = '<div class="error-message">加载数据失败</div>';
+  }
+}
+
+// 编辑数据库
+async function editDatabase(dbId) {
+  try {
+    const response = await fetch(`/api/databases/${dbId}`);
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      showDatabaseModal(data.database);
+    } else {
+      alert(data.message || '获取数据库信息失败');
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('获取数据库信息失败，请稍后重试');
+  }
+}
+
+// 测试数据库连接
+async function testDatabaseConnection(dbId) {
+  try {
+    const response = await fetch(`/api/databases/${dbId}/test`, {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      alert('连接成功: ' + data.message);
+    } else {
+      alert('连接失败: ' + (data.message || '未知错误'));
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('测试连接失败，请稍后重试');
+  }
+}
+
+// 删除数据库
+async function deleteDatabase(dbId) {
+  if (!confirm('确定要删除此数据库配置吗？此操作不可撤销。')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/databases/${dbId}`, {
+      method: 'DELETE'
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      alert('数据库配置已删除');
+      window.location.reload();
+    } else {
+      alert(data.message || '删除失败');
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('删除失败，请稍后重试');
+  }
+}
+
+// 编辑存储
+async function editStorage(storageId) {
+  try {
+    const response = await fetch(`/api/storage/${storageId}`);
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      showStorageModal(data.storage);
+    } else {
+      alert(data.message || '获取存储信息失败');
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('获取存储信息失败，请稍后重试');
+  }
+}
+
+// 测试存储连接
+async function testStorageConnection(storageId) {
+  try {
+    const response = await fetch(`/api/storage/${storageId}/test`, {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      alert('连接成功: ' + data.message);
+    } else {
+      alert('连接失败: ' + (data.message || '未知错误'));
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('测试连接失败，请稍后重试');
+  }
+}
+
+// 删除存储
+async function deleteStorage(storageId) {
+  if (!confirm('确定要删除此存储配置吗？此操作不可撤销。')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/storage/${storageId}`, {
+      method: 'DELETE'
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      alert('存储配置已删除');
+      window.location.reload();
+    } else {
+      alert(data.message || '删除失败');
+    }
+  } catch (error) {
+    console.error('请求失败:', error);
+    alert('删除失败，请稍后重试');
+  }
 }
