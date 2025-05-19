@@ -1023,14 +1023,33 @@ app.get("/api/backup/history", authMiddleware, async (c) => {
 app.get("/api/backup/schedule", authMiddleware, async (c) => {
   const user = c.get("user");
 
-  // 获取用户的计划备份配置
-  const scheduleConfigResult = await kv.get(["backupSchedule", user.id]);
-  const scheduleConfig = scheduleConfigResult.value || null;
+  try {
+    logInfo(`用户 ${user.username} 请求获取计划备份设置`);
 
-  return c.json({
-    success: true,
-    config: scheduleConfig
-  });
+    // 获取用户的计划备份配置
+    const scheduleConfigResult = await kv.get(["backupSchedule", user.id]);
+    const scheduleConfig = scheduleConfigResult.value || null;
+
+    if (scheduleConfig) {
+      logInfo(`成功获取用户 ${user.username} 的计划备份设置: ${JSON.stringify(scheduleConfig)}`);
+    } else {
+      logInfo(`用户 ${user.username} 没有现有的计划备份设置`);
+    }
+
+    return c.json({
+      success: true,
+      config: scheduleConfig
+    });
+  } catch (error) {
+    const errorMessage = `获取计划备份设置失败: ${error.message || '未知错误'}`;
+    logError(errorMessage, error);
+
+    return c.json({
+      success: false,
+      message: "获取计划备份设置失败，请稍后重试",
+      error: error.message || '未知错误'
+    }, 500);
+  }
 });
 
 // 计划备份API
@@ -1051,17 +1070,23 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
     return c.json({ success: false, message: "无效的请求格式" }, 400);
   }
 
+  // 记录请求内容（不包含敏感信息）
+  logInfo(`收到计划备份设置请求: 用户=${user.username}, 频率=${body.frequency}, 时间=${body.time}, 保留天数=${body.retention}`);
+
   // 验证输入
   if (!body.frequency || !body.time || !body.retention) {
+    logError(`计划备份设置验证失败: 缺少必要字段`);
     return c.json({ success: false, message: "缺少必要的字段" }, 400);
   }
 
   // 根据频率验证其他字段
   if (body.frequency === 'weekly' && !body.weekday) {
+    logError(`计划备份设置验证失败: 每周备份需要指定星期几`);
     return c.json({ success: false, message: "每周备份需要指定星期几" }, 400);
   }
 
   if (body.frequency === 'monthly' && !body.dayOfMonth) {
+    logError(`计划备份设置验证失败: 每月备份需要指定日期`);
     return c.json({ success: false, message: "每月备份需要指定日期" }, 400);
   }
 
@@ -1083,8 +1108,18 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
 
   // 保存配置
   try {
-    await kv.set(["backupSchedule", user.id], scheduleConfig);
-    logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}`);
+    logInfo(`尝试保存计划备份配置: ${JSON.stringify(scheduleConfig)}`);
+
+    // 使用 atomic 操作确保写入成功
+    const result = await kv.atomic()
+      .set(["backupSchedule", user.id], scheduleConfig)
+      .commit();
+
+    if (!result.ok) {
+      throw new Error(`KV 原子操作失败: ${result.toString()}`);
+    }
+
+    logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}, 保存成功`);
 
     return c.json({
       success: true,
@@ -1092,8 +1127,13 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
       config: scheduleConfig
     });
   } catch (error) {
-    logError(`保存计划备份设置失败:`, error);
-    return c.json({ success: false, message: "保存计划备份设置失败，请稍后重试" }, 500);
+    const errorMessage = `保存计划备份设置失败: ${error.message || '未知错误'}`;
+    logError(errorMessage, error);
+    return c.json({
+      success: false,
+      message: "保存计划备份设置失败，请稍后重试",
+      error: error.message || '未知错误'
+    }, 500);
   }
 });
 

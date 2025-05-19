@@ -24,11 +24,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // 立即备份按钮
   const backupNowBtn = document.getElementById('manualBackupBtn');
   if (backupNowBtn) {
-    backupNowBtn.addEventListener('click', () => {
+    // 移除所有现有的事件监听器
+    const newBackupBtn = backupNowBtn.cloneNode(true);
+    backupNowBtn.parentNode.replaceChild(newBackupBtn, backupNowBtn);
+
+    // 添加新的事件监听器
+    newBackupBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
       // 防止重复点击
       if (document.querySelector('.modal')) {
+        console.log('已有模态框打开，忽略点击');
         return;
       }
+
+      console.log('打开立即备份模态框');
       showBackupModal();
     });
   }
@@ -36,7 +47,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // 计划备份按钮
   const scheduleBackupBtn = document.getElementById('scheduleBackupBtn');
   if (scheduleBackupBtn) {
-    scheduleBackupBtn.addEventListener('click', () => {
+    // 移除所有现有的事件监听器
+    const newScheduleBtn = scheduleBackupBtn.cloneNode(true);
+    scheduleBackupBtn.parentNode.replaceChild(newScheduleBtn, scheduleBackupBtn);
+
+    // 添加新的事件监听器
+    newScheduleBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // 防止重复点击
+      if (document.querySelector('.modal')) {
+        console.log('已有模态框打开，忽略点击');
+        return;
+      }
+
+      console.log('打开计划备份模态框');
       showScheduleBackupModal();
     });
   }
@@ -664,9 +690,18 @@ function showStorageModal(storageData = null) {
 
 // 显示备份模态框
 function showBackupModal() {
+  console.log('执行 showBackupModal 函数');
+
+  // 检查是否已经有模态框打开
+  if (document.querySelector('.modal')) {
+    console.log('已有模态框打开，不再创建新的模态框');
+    return;
+  }
+
   // 创建模态框
   const modal = document.createElement('div');
   modal.className = 'modal';
+  modal.id = 'backupModal'; // 添加ID以便于识别
   modal.style.display = 'block'; // 确保模态框显示
   modal.innerHTML = `
     <div class="modal-content">
@@ -675,7 +710,11 @@ function showBackupModal() {
         <button class="modal-close close-modal">&times;</button>
       </div>
       <div class="modal-body">
-        <form id="backupForm">
+        <div id="backupLoadingIndicator" class="loading-indicator">
+          <div class="spinner"></div>
+          <div>加载中...</div>
+        </div>
+        <form id="backupForm" style="display: none;">
           <div class="form-group">
             <label>选择数据库</label>
             <div class="checkbox-group" id="databaseCheckboxes">
@@ -699,130 +738,220 @@ function showBackupModal() {
   `;
 
   document.body.appendChild(modal);
+  console.log('备份模态框已添加到DOM');
 
   // 关闭模态框
   const closeButtons = modal.querySelectorAll('.close-modal');
   closeButtons.forEach(button => {
     button.addEventListener('click', () => {
-      document.body.removeChild(modal);
+      console.log('关闭备份模态框');
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+      }
     });
   });
 
   // 点击模态框外部关闭
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
-      document.body.removeChild(modal);
+      console.log('点击模态框外部，关闭备份模态框');
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+      }
     }
   });
 
   // 加载数据库和存储列表
-  loadBackupFormData();
+  loadBackupFormData().then(() => {
+    // 加载完成后，隐藏加载指示器，显示表单
+    const loadingIndicator = document.getElementById('backupLoadingIndicator');
+    const backupForm = document.getElementById('backupForm');
 
-  // 表单提交
-  const form = modal.querySelector('#backupForm');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const formData = new FormData(form);
-    const backupFormError = document.getElementById('backupFormError');
-
-    // 获取选中的数据库
-    const selectedDatabases = [];
-    document.querySelectorAll('input[name="databases"]:checked').forEach(checkbox => {
-      selectedDatabases.push(checkbox.value);
-    });
-
-    if (selectedDatabases.length === 0) {
-      backupFormError.textContent = '请至少选择一个数据库';
-      return;
-    }
-
-    formData.delete('databases');
-    selectedDatabases.forEach(db => {
-      formData.append('databases', db);
-    });
-
-    try {
-      const response = await fetch('/api/backup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(formData)
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        // 成功，关闭模态框并刷新页面
-        document.body.removeChild(modal);
-        alert('备份任务已提交，请在备份历史中查看结果');
-        window.location.reload();
-      } else {
-        // 失败，显示错误信息
-        backupFormError.textContent = data.message || '操作失败，请稍后重试';
-      }
-    } catch (error) {
-      console.error('请求失败:', error);
-      backupFormError.textContent = '请求失败，请稍后重试';
+    if (loadingIndicator) loadingIndicator.style.display = 'none';
+    if (backupForm) backupForm.style.display = 'block';
+  }).catch(error => {
+    console.error('加载备份表单数据失败:', error);
+    const loadingIndicator = document.getElementById('backupLoadingIndicator');
+    if (loadingIndicator) {
+      loadingIndicator.innerHTML = '<div class="error-message">加载数据失败，请刷新页面重试</div>';
     }
   });
+
+  // 表单提交
+  const form = document.getElementById('backupForm');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      console.log('提交备份表单');
+
+      const formData = new FormData(form);
+      const backupFormError = document.getElementById('backupFormError');
+      backupFormError.textContent = ''; // 清除之前的错误信息
+
+      // 获取选中的数据库
+      const selectedDatabases = [];
+      document.querySelectorAll('input[name="databases"]:checked').forEach(checkbox => {
+        selectedDatabases.push(checkbox.value);
+      });
+
+      if (selectedDatabases.length === 0) {
+        backupFormError.textContent = '请至少选择一个数据库';
+        backupFormError.style.color = 'red';
+        return;
+      }
+
+      formData.delete('databases');
+      selectedDatabases.forEach(db => {
+        formData.append('databases', db);
+      });
+
+      try {
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = '备份中...';
+        }
+
+        console.log('发送备份请求');
+        const response = await fetch('/api/backup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(formData)
+        });
+
+        console.log('备份请求响应状态:', response.status);
+        const data = await response.json();
+        console.log('备份请求响应数据:', data);
+
+        if (response.ok && data.success) {
+          // 成功，关闭模态框并刷新页面
+          console.log('备份任务提交成功');
+          if (document.body.contains(modal)) {
+            document.body.removeChild(modal);
+          }
+          alert('备份任务已提交，请在备份历史中查看结果');
+          window.location.reload();
+        } else {
+          // 失败，显示错误信息
+          console.error('备份任务提交失败:', data);
+          backupFormError.textContent = data.message || '操作失败，请稍后重试';
+          backupFormError.style.color = 'red';
+          if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = '开始备份';
+          }
+        }
+      } catch (error) {
+        console.error('备份请求失败:', error);
+        backupFormError.textContent = `请求失败: ${error.message || '未知错误'}`;
+        backupFormError.style.color = 'red';
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = '开始备份';
+        }
+      }
+    });
+  } else {
+    console.error('未找到备份表单元素');
+  }
 }
 
 // 加载备份表单数据
 async function loadBackupFormData() {
-  try {
-    // 加载数据库列表
-    const dbResponse = await fetch('/api/databases');
-    const dbData = await dbResponse.json();
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('开始加载备份表单数据');
 
-    const databaseCheckboxes = document.getElementById('databaseCheckboxes');
-    databaseCheckboxes.innerHTML = '';
+      // 加载数据库列表
+      console.log('请求数据库列表');
+      const dbResponse = await fetch('/api/databases');
+      const dbData = await dbResponse.json();
+      console.log('数据库列表响应:', dbData);
 
-    if (dbData.success && dbData.databases.length > 0) {
-      dbData.databases.forEach(db => {
-        const checkbox = document.createElement('div');
-        checkbox.className = 'checkbox-item';
-        checkbox.innerHTML = `
-          <label>
-            <input type="checkbox" name="databases" value="${db.id}">
-            ${db.name} (${db.databases.join(', ')})
-          </label>
-        `;
-        databaseCheckboxes.appendChild(checkbox);
-      });
-    } else {
-      databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
-    }
+      const databaseCheckboxes = document.getElementById('databaseCheckboxes');
+      if (!databaseCheckboxes) {
+        console.error('未找到数据库复选框容器元素');
+        reject(new Error('DOM元素未找到: databaseCheckboxes'));
+        return;
+      }
 
-    // 加载存储列表
-    const storageResponse = await fetch('/api/storage');
-    const storageData = await storageResponse.json();
+      databaseCheckboxes.innerHTML = '';
 
-    const storageSelect = document.getElementById('backupStorage');
+      if (dbData.success && dbData.databases && dbData.databases.length > 0) {
+        dbData.databases.forEach(db => {
+          const checkbox = document.createElement('div');
+          checkbox.className = 'checkbox-item';
+          checkbox.innerHTML = `
+            <label>
+              <input type="checkbox" name="databases" value="${db.id}">
+              ${db.name} (${db.databases.join(', ')})
+            </label>
+          `;
+          databaseCheckboxes.appendChild(checkbox);
+        });
+      } else {
+        databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
+      }
 
-    if (storageData.success && storageData.storage.length > 0) {
-      storageData.storage.forEach(storage => {
-        const option = document.createElement('option');
-        option.value = storage.id;
-        option.textContent = storage.name;
-        if (storage.active) {
-          option.selected = true;
-        }
-        storageSelect.appendChild(option);
-      });
-    } else {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = '没有可用的存储配置';
-      option.disabled = true;
+      // 加载存储列表
+      console.log('请求存储列表');
+      const storageResponse = await fetch('/api/storage');
+      const storageData = await storageResponse.json();
+      console.log('存储列表响应:', storageData);
+
+      const storageSelect = document.getElementById('backupStorage');
+      if (!storageSelect) {
+        console.error('未找到存储选择器元素');
+        reject(new Error('DOM元素未找到: backupStorage'));
+        return;
+      }
+
+      // 清空现有选项
       storageSelect.innerHTML = '';
-      storageSelect.appendChild(option);
+
+      if (storageData.success && storageData.storage && storageData.storage.length > 0) {
+        // 添加默认选项
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- 选择存储 --';
+        defaultOption.disabled = true;
+        storageSelect.appendChild(defaultOption);
+
+        // 添加存储选项
+        storageData.storage.forEach(storage => {
+          const option = document.createElement('option');
+          option.value = storage.id;
+          option.textContent = storage.name;
+          if (storage.active) {
+            option.selected = true;
+          }
+          storageSelect.appendChild(option);
+        });
+      } else {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '没有可用的存储配置';
+        option.disabled = true;
+        option.selected = true;
+        storageSelect.appendChild(option);
+      }
+
+      console.log('备份表单数据加载完成');
+      resolve();
+    } catch (error) {
+      console.error('加载备份表单数据失败:', error);
+
+      const databaseCheckboxes = document.getElementById('databaseCheckboxes');
+      if (databaseCheckboxes) {
+        databaseCheckboxes.innerHTML = '<div class="error-message">加载数据失败</div>';
+      }
+
+      reject(error);
     }
-  } catch (error) {
-    console.error('加载数据失败:', error);
-    document.getElementById('databaseCheckboxes').innerHTML = '<div class="error-message">加载数据失败</div>';
-  }
+  });
 }
 
 // 编辑数据库
@@ -1098,40 +1227,59 @@ async function showScheduleBackupModal() {
 
     const formData = new FormData(form);
     const scheduleFormError = document.getElementById('scheduleFormError');
+    scheduleFormError.textContent = ''; // 清除之前的错误信息
 
     try {
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = '保存中...';
 
+      // 构建请求数据
+      const requestData = {
+        frequency: formData.get('frequency'),
+        time: formData.get('time'),
+        retention: formData.get('retention')
+      };
+
+      // 根据频率添加特定字段
+      if (requestData.frequency === 'weekly') {
+        requestData.weekday = formData.get('weekday');
+      } else if (requestData.frequency === 'monthly') {
+        requestData.dayOfMonth = formData.get('dayOfMonth');
+      }
+
+      console.log('提交计划备份设置:', requestData);
+
       const response = await fetch('/api/backup/schedule', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          frequency: formData.get('frequency'),
-          weekday: formData.get('weekday'),
-          dayOfMonth: formData.get('dayOfMonth'),
-          time: formData.get('time'),
-          retention: formData.get('retention')
-        })
+        body: JSON.stringify(requestData)
       });
 
+      console.log('服务器响应状态:', response.status);
       const data = await response.json();
+      console.log('服务器响应数据:', data);
 
       if (response.ok && data.success) {
         alert('计划备份设置已保存');
         document.body.removeChild(modal);
         window.location.reload();
       } else {
-        scheduleFormError.textContent = data.message || '保存计划备份设置失败';
+        let errorMsg = data.message || '保存计划备份设置失败';
+        if (data.error) {
+          errorMsg += `: ${data.error}`;
+        }
+        scheduleFormError.textContent = errorMsg;
+        scheduleFormError.style.color = 'red';
         submitButton.disabled = false;
         submitButton.textContent = '保存';
       }
     } catch (error) {
       console.error('保存计划备份设置失败:', error);
-      scheduleFormError.textContent = '保存计划备份设置失败，请稍后重试';
+      scheduleFormError.textContent = `保存计划备份设置失败: ${error.message || '未知错误'}`;
+      scheduleFormError.style.color = 'red';
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = false;
       submitButton.textContent = '保存';
