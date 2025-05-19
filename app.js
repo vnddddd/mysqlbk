@@ -14,19 +14,20 @@ import { nanoid } from "https://deno.land/x/nanoid@v3.0.0/mod.ts";
 const kv = await Deno.openKv();
 
 // 简单的密码哈希函数（替代bcrypt）
-function simpleHash(password) {
+async function simpleHash(password) {
   // 使用内置的 crypto 模块创建 SHA-256 哈希
   const encoder = new TextEncoder();
   const data = encoder.encode(password + "mysql-backup-salt");
-  const hashBuffer = crypto.subtle.digestSync("SHA-256", data);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex;
 }
 
 // 验证密码
-function verifyPassword(password, hash) {
-  return simpleHash(password) === hash;
+async function verifyPassword(password, hash) {
+  const passwordHash = await simpleHash(password);
+  return passwordHash === hash;
 }
 
 // 创建默认管理员账号
@@ -43,7 +44,7 @@ async function createAdminUser() {
       id: "admin",
       username: "admin",
       name: "管理员",
-      passwordHash: simpleHash(randomPassword),
+      passwordHash: await simpleHash(randomPassword),
       createdAt: new Date().toISOString()
     };
 
@@ -160,7 +161,13 @@ app.post("/api/login", async (c) => {
   const userResult = await kv.get(["users", username]);
   const user = userResult.value;
 
-  if (!user || !verifyPassword(password, user.passwordHash)) {
+  if (!user) {
+    return c.json({ success: false, message: "用户名或密码错误" }, 401);
+  }
+
+  // 验证密码
+  const isValid = await verifyPassword(password, user.passwordHash);
+  if (!isValid) {
     return c.json({ success: false, message: "用户名或密码错误" }, 401);
   }
 
@@ -203,7 +210,7 @@ app.post("/api/register", async (c) => {
 
   // 创建新用户
   const userId = nanoid();
-  const passwordHash = simpleHash(password);
+  const passwordHash = await simpleHash(password);
 
   await kv.set(["users", username], {
     id: userId,
@@ -238,7 +245,7 @@ app.post("/api/settings/account", authMiddleware, async (c) => {
 
   // 如果提供了新密码，更新密码
   if (password && password.trim() !== "") {
-    updatedUser.passwordHash = simpleHash(password);
+    updatedUser.passwordHash = await simpleHash(password);
     updatedUser.passwordChanged = true; // 标记密码已修改
   }
 
