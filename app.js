@@ -9,7 +9,6 @@ import { serveStatic } from "https://deno.land/x/hono@v3.11.7/middleware.ts";
 import { getCookie, setCookie, deleteCookie } from "https://deno.land/x/hono@v3.11.7/helper/cookie/index.ts";
 import { html, raw } from "https://deno.land/x/hono@v3.11.7/helper/html/index.ts";
 import { nanoid } from "https://deno.land/x/nanoid@v3.0.0/mod.ts";
-import { setupScheduledBackups } from "./mysql-backup.js"; // 导入计划备份模块
 
 // 初始化 KV 存储
 const kv = await Deno.openKv();
@@ -1643,16 +1642,8 @@ async function cleanupOldBackups(retentionDays, userId) {
   }
 }
 
-// 启动计划备份功能
-setupScheduledBackups(kv, executeBackup, cleanupOldBackups).catch(error => {
-  logError("启动计划备份功能失败", error);
-});
-
 // 启动服务器
 Deno.serve(app.fetch);
-
-// 导出函数和变量，供其他模块使用
-export { kv, executeBackup, cleanupOldBackups };
 
 // 渲染登录页面
 function renderLoginPage() {
