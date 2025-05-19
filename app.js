@@ -9,13 +9,63 @@ import { serveStatic } from "https://deno.land/x/hono@v3.11.7/middleware.ts";
 import { getCookie, setCookie, deleteCookie } from "https://deno.land/x/hono@v3.11.7/helper/cookie/index.ts";
 import { html } from "https://deno.land/x/hono@v3.11.7/helper/html/index.ts";
 import { nanoid } from "https://deno.land/x/nanoid@v3.0.0/mod.ts";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 // 初始化 KV 存储
 const kv = await Deno.openKv();
 
+// 简单的密码哈希函数（替代bcrypt）
+function simpleHash(password) {
+  // 使用内置的 crypto 模块创建 SHA-256 哈希
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + "mysql-backup-salt");
+  const hashBuffer = crypto.subtle.digestSync("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+
+// 验证密码
+function verifyPassword(password, hash) {
+  return simpleHash(password) === hash;
+}
+
+// 创建默认管理员账号
+async function createAdminUser() {
+  // 检查管理员账号是否已存在
+  const adminResult = await kv.get(["users", "admin"]);
+
+  if (!adminResult.value) {
+    // 生成随机密码
+    const randomPassword = Math.random().toString(36).slice(-8);
+
+    // 创建管理员账号
+    const adminUser = {
+      id: "admin",
+      username: "admin",
+      name: "管理员",
+      passwordHash: simpleHash(randomPassword),
+      createdAt: new Date().toISOString()
+    };
+
+    await kv.set(["users", "admin"], adminUser);
+
+    // 输出管理员密码到控制台
+    console.log("=================================================");
+    console.log(`已创建管理员账号，用户名: admin，密码: ${randomPassword}`);
+    console.log("请登录后立即修改密码");
+    console.log("=================================================");
+
+    return randomPassword;
+  }
+
+  return null;
+}
+
 // 创建 Hono 应用
 const app = new Hono();
+
+// 创建管理员账号
+await createAdminUser();
 
 // 日志函数
 function logInfo(message) {
@@ -75,11 +125,6 @@ app.get("/login", (c) => {
   return c.html(renderLoginPage());
 });
 
-// 注册页面
-app.get("/register", (c) => {
-  return c.html(renderRegisterPage());
-});
-
 // 仪表板页面
 app.get("/dashboard", authMiddleware, async (c) => {
   const user = c.get("user");
@@ -96,7 +141,10 @@ app.get("/dashboard", authMiddleware, async (c) => {
   const backupHistoryResult = await kv.get(["backupHistory", user.id]);
   const backupHistory = backupHistoryResult.value || [];
 
-  return c.html(renderDashboard(user, dbConfigs, storageConfigs, backupHistory));
+  // 检查是否是首次登录
+  const firstLogin = await isFirstLogin(user.username);
+
+  return c.html(renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLogin));
 });
 
 // 处理登录请求
@@ -112,7 +160,7 @@ app.post("/api/login", async (c) => {
   const userResult = await kv.get(["users", username]);
   const user = userResult.value;
 
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || !verifyPassword(password, user.passwordHash)) {
     return c.json({ success: false, message: "用户名或密码错误" }, 401);
   }
 
@@ -155,7 +203,7 @@ app.post("/api/register", async (c) => {
 
   // 创建新用户
   const userId = nanoid();
-  const passwordHash = await bcrypt.hash(password);
+  const passwordHash = simpleHash(password);
 
   await kv.set(["users", username], {
     id: userId,
@@ -168,6 +216,56 @@ app.post("/api/register", async (c) => {
   return c.json({ success: true, message: "注册成功，请登录" });
 });
 
+// 处理账户设置更新
+app.post("/api/settings/account", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const { name, password } = await c.req.parseBody();
+
+  // 获取用户完整信息
+  const userResult = await kv.get(["users", user.username]);
+  if (!userResult.value) {
+    return c.json({ success: false, message: "用户不存在" }, 404);
+  }
+
+  const userData = userResult.value;
+
+  // 更新用户信息
+  const updatedUser = {
+    ...userData,
+    name: name || userData.name,
+    updatedAt: new Date().toISOString()
+  };
+
+  // 如果提供了新密码，更新密码
+  if (password && password.trim() !== "") {
+    updatedUser.passwordHash = simpleHash(password);
+    updatedUser.passwordChanged = true; // 标记密码已修改
+  }
+
+  // 保存更新后的用户信息
+  await kv.set(["users", user.username], updatedUser);
+
+  // 更新会话中的用户信息
+  const sessionId = getCookie(c, "session");
+  const sessionResult = await kv.get(["sessions", sessionId]);
+
+  if (sessionResult.value) {
+    const sessionData = sessionResult.value;
+    sessionData.user.name = updatedUser.name;
+    await kv.set(["sessions", sessionId], sessionData);
+  }
+
+  return c.json({
+    success: true,
+    message: "账户设置已更新",
+    user: {
+      id: updatedUser.id,
+      username: updatedUser.username,
+      name: updatedUser.name
+    }
+  });
+});
+
 // 处理登出请求
 app.post("/api/logout", async (c) => {
   const sessionId = getCookie(c, "session");
@@ -176,6 +274,29 @@ app.post("/api/logout", async (c) => {
     deleteCookie(c, "session");
   }
   return c.json({ success: true, redirect: "/login" });
+});
+
+// 处理备份设置更新
+app.post("/api/settings/backup", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const { backupRetentionDays, backupTime, compressionLevel } = await c.req.parseBody();
+
+  // 验证输入
+  const retentionDays = parseInt(backupRetentionDays) || 7;
+  if (retentionDays < 1 || retentionDays > 365) {
+    return c.json({ success: false, message: "备份保留天数必须在1-365之间" }, 400);
+  }
+
+  // 保存设置
+  await kv.set(["backupSettings", user.id], {
+    backupRetentionDays: retentionDays,
+    backupTime: backupTime || "04:00",
+    compressionLevel: parseInt(compressionLevel) || 6,
+    updatedAt: new Date().toISOString(),
+    updatedBy: user.username
+  });
+
+  return c.json({ success: true, message: "备份设置已更新" });
 });
 
 // 数据库配置API
@@ -641,21 +762,23 @@ function renderLoginPage() {
     <div class="login-form-container">
       <h1>MySQL 备份管理系统</h1>
       <div class="login-form">
-        <h2>登录</h2>
+        <h2>管理员登录</h2>
         <form id="loginForm">
           <div class="form-group">
             <label for="username">用户名</label>
-            <input type="text" id="username" name="username" required>
+            <input type="text" id="username" name="username" value="admin" required>
+            <div class="form-hint">默认用户名: admin</div>
           </div>
           <div class="form-group">
             <label for="password">密码</label>
             <input type="password" id="password" name="password" required>
+            <div class="form-hint">首次登录请使用控制台显示的随机密码</div>
           </div>
           <div class="form-error" id="loginError"></div>
           <button type="submit" class="btn btn-primary">登录</button>
         </form>
         <div class="form-footer">
-          <p>还没有账号？<a href="/register">注册</a></p>
+          <p>系统自动创建管理员账号，请查看控制台日志获取初始密码</p>
         </div>
       </div>
     </div>
@@ -666,53 +789,17 @@ function renderLoginPage() {
   `;
 }
 
-// 渲染注册页面
-function renderRegisterPage() {
-  return html`
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>注册 - MySQL 备份管理系统</title>
-  <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body class="login-page">
-  <div class="login-container">
-    <div class="login-form-container">
-      <h1>MySQL 备份管理系统</h1>
-      <div class="login-form">
-        <h2>注册新账号</h2>
-        <form id="registerForm">
-          <div class="form-group">
-            <label for="name">姓名</label>
-            <input type="text" id="name" name="name" required>
-          </div>
-          <div class="form-group">
-            <label for="username">用户名</label>
-            <input type="text" id="username" name="username" required>
-          </div>
-          <div class="form-group">
-            <label for="password">密码</label>
-            <input type="password" id="password" name="password" required>
-          </div>
-          <div class="form-error" id="registerError"></div>
-          <button type="submit" class="btn btn-primary">注册</button>
-        </form>
-        <div class="form-footer">
-          <p>已有账号？<a href="/login">登录</a></p>
-        </div>
-      </div>
-    </div>
-  </div>
-  <script src="/static/register.js"></script>
-</body>
-</html>
-  `;
+// 检查是否是首次登录（使用默认密码）
+async function isFirstLogin(username) {
+  const userResult = await kv.get(["users", username]);
+  if (!userResult.value) return false;
+
+  // 检查是否有passwordChanged标记
+  return !userResult.value.passwordChanged;
 }
 
 // 渲染仪表板页面
-function renderDashboard(user, dbConfigs, storageConfigs, backupHistory) {
+function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLogin = false) {
   return html`
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -748,6 +835,11 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory) {
       <main class="dashboard-main">
         <section id="overview" class="dashboard-section active">
           <h2>系统概览</h2>
+          ${firstLogin ? `
+          <div class="alert alert-warning">
+            <strong>首次登录提示：</strong> 您正在使用系统生成的初始密码登录，请立即前往 <a href="#settings">系统设置</a> 修改您的密码以确保账户安全。
+          </div>
+          ` : ''}
           <div class="overview-cards">
             <div class="card">
               <h3>数据库</h3>

@@ -503,6 +503,29 @@ a:hover {
   color: var(--error-color);
 }
 
+/* 警告提示 */
+.alert {
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.alert-warning {
+  background-color: rgba(255, 149, 0, 0.1);
+  color: var(--warning-color);
+  border-left: 4px solid var(--warning-color);
+}
+
+.alert a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.alert a:hover {
+  text-decoration: none;
+}
+
 /* 设置卡片 */
 .settings-card {
   background-color: var(--card-background);
@@ -527,50 +550,50 @@ a:hover {
   .dashboard-content {
     flex-direction: column;
   }
-  
+
   .dashboard-nav {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
     padding: 1rem 0;
   }
-  
+
   .dashboard-nav ul {
     display: flex;
     overflow-x: auto;
     padding: 0 1rem;
   }
-  
+
   .dashboard-nav a {
     padding: 0.5rem 1rem;
     white-space: nowrap;
   }
-  
+
   .overview-cards {
     grid-template-columns: 1fr;
   }
-  
+
   .action-buttons {
     flex-direction: column;
   }
-  
+
   .database-item,
   .storage-item {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .database-actions,
   .storage-actions {
     margin-top: 1rem;
     width: 100%;
     justify-content: flex-end;
   }
-  
+
   .history-table {
     overflow-x: auto;
   }
-  
+
   .history-header,
   .history-row {
     min-width: 800px;
