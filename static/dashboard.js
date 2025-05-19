@@ -25,6 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const backupNowBtn = document.getElementById('manualBackupBtn');
   if (backupNowBtn) {
     backupNowBtn.addEventListener('click', () => {
+      // 防止重复点击
+      if (document.querySelector('.modal')) {
+        return;
+      }
       showBackupModal();
     });
   }
@@ -157,41 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 备份设置表单
-  const backupSettingsForm = document.getElementById('backupSettingsForm');
-  if (backupSettingsForm) {
-    backupSettingsForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
 
-      const formData = new FormData(backupSettingsForm);
-      const settings = {
-        backupRetentionDays: formData.get('backupRetentionDays'),
-        backupTime: formData.get('backupTime'),
-        compressionLevel: formData.get('compressionLevel')
-      };
-
-      try {
-        const response = await fetch('/api/settings/backup', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(settings)
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          alert('备份设置已保存');
-        } else {
-          alert(data.message || '保存设置失败');
-        }
-      } catch (error) {
-        console.error('保存设置失败:', error);
-        alert('保存设置失败，请稍后重试');
-      }
-    });
-  }
 
   // 账户设置表单
   const accountSettingsForm = document.getElementById('accountSettingsForm');

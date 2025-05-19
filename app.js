@@ -377,28 +377,7 @@ app.post("/api/logout", async (c) => {
   return c.json({ success: true, redirect: "/login" });
 });
 
-// 处理备份设置更新
-app.post("/api/settings/backup", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const { backupRetentionDays, backupTime, compressionLevel } = await c.req.parseBody();
 
-  // 验证输入
-  const retentionDays = parseInt(backupRetentionDays) || 7;
-  if (retentionDays < 1 || retentionDays > 365) {
-    return c.json({ success: false, message: "备份保留天数必须在1-365之间" }, 400);
-  }
-
-  // 保存设置
-  await kv.set(["backupSettings", user.id], {
-    backupRetentionDays: retentionDays,
-    backupTime: backupTime || "04:00",
-    compressionLevel: parseInt(compressionLevel) || 6,
-    updatedAt: new Date().toISOString(),
-    updatedBy: user.username
-  });
-
-  return c.json({ success: true, message: "备份设置已更新" });
-});
 
 // 解析MySQL连接字符串
 function parseMySQLConnectionString(connectionString) {
@@ -1804,35 +1783,6 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
 
         <section id="settings" class="dashboard-section">
           <h2>系统设置</h2>
-
-          <div class="settings-card">
-            <h3>备份设置</h3>
-            <form id="backupSettingsForm" class="settings-form">
-              <div class="form-group">
-                <label for="backupRetentionDays">备份保留天数</label>
-                <input type="number" id="backupRetentionDays" name="backupRetentionDays" min="1" max="365" value="7">
-                <div class="form-hint">超过此天数的备份文件将被自动删除</div>
-              </div>
-
-              <div class="form-group">
-                <label for="backupTime">自动备份时间</label>
-                <input type="time" id="backupTime" name="backupTime" value="04:00">
-                <div class="form-hint">每天自动执行备份的时间</div>
-              </div>
-
-              <div class="form-group">
-                <label for="compressionLevel">压缩级别</label>
-                <select id="compressionLevel" name="compressionLevel" class="form-select">
-                  <option value="1">低 (最快)</option>
-                  <option value="6" selected>中等 (平衡)</option>
-                  <option value="9">高 (最小体积)</option>
-                </select>
-                <div class="form-hint">备份文件的压缩级别，影响备份速度和文件大小</div>
-              </div>
-
-              <button type="submit" class="btn btn-primary">保存设置</button>
-            </form>
-          </div>
 
           <div class="settings-card">
             <h3>账户设置</h3>
