@@ -267,29 +267,49 @@ function showDatabaseModal(dbData = null) {
           <div class="form-group">
             <label for="dbName">名称</label>
             <input type="text" id="dbName" name="name" value="${dbData?.name || ''}" required>
+            <div class="form-hint">为此数据库连接起一个易记的名称</div>
           </div>
-          <div class="form-group">
-            <label for="dbHost">主机地址</label>
-            <input type="text" id="dbHost" name="host" value="${dbData?.host || ''}" required>
+
+          <div class="form-tabs">
+            <div class="tab-header">
+              <button type="button" class="tab-btn active" data-tab="simple">简易模式</button>
+              <button type="button" class="tab-btn" data-tab="advanced">高级模式</button>
+            </div>
+
+            <div class="tab-content active" id="simple-tab">
+              <div class="form-group">
+                <label for="dbConnectionString">连接字符串</label>
+                <input type="text" id="dbConnectionString" name="connectionString" placeholder="user:password@tcp(host:port)/database" value="">
+                <div class="form-hint">例如: user:password@tcp(mysql.example.com:3306)/dbname</div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="advanced-tab">
+              <div class="form-group">
+                <label for="dbHost">主机地址</label>
+                <input type="text" id="dbHost" name="host" value="${dbData?.host || ''}">
+              </div>
+              <div class="form-group">
+                <label for="dbPort">端口</label>
+                <input type="number" id="dbPort" name="port" value="${dbData?.port || '3306'}">
+              </div>
+              <div class="form-group">
+                <label for="dbUser">用户名</label>
+                <input type="text" id="dbUser" name="user" value="${dbData?.user || ''}">
+              </div>
+              <div class="form-group">
+                <label for="dbPassword">密码</label>
+                <input type="password" id="dbPassword" name="password" value="${dbData?.password || ''}">
+                ${dbData ? '<div class="form-hint">留空表示不修改密码</div>' : ''}
+              </div>
+              <div class="form-group">
+                <label for="dbDatabases">数据库名称</label>
+                <input type="text" id="dbDatabases" name="databases" value="${dbData?.databases ? dbData.databases.join(', ') : ''}">
+                <div class="form-hint">多个数据库用逗号分隔</div>
+              </div>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="dbPort">端口</label>
-            <input type="number" id="dbPort" name="port" value="${dbData?.port || '3306'}" required>
-          </div>
-          <div class="form-group">
-            <label for="dbUser">用户名</label>
-            <input type="text" id="dbUser" name="user" value="${dbData?.user || ''}" required>
-          </div>
-          <div class="form-group">
-            <label for="dbPassword">密码</label>
-            <input type="password" id="dbPassword" name="password" value="${dbData?.password || ''}">
-            ${dbData ? '<div class="form-hint">留空表示不修改密码</div>' : ''}
-          </div>
-          <div class="form-group">
-            <label for="dbDatabases">数据库名称</label>
-            <input type="text" id="dbDatabases" name="databases" value="${dbData?.databases.join(', ') || ''}" required>
-            <div class="form-hint">多个数据库用逗号分隔</div>
-          </div>
+
           <div class="form-error" id="dbFormError"></div>
         </form>
       </div>
@@ -317,6 +337,85 @@ function showDatabaseModal(dbData = null) {
     }
   });
 
+  // 处理选项卡切换
+  const tabButtons = modal.querySelectorAll('.tab-btn');
+  const tabContents = modal.querySelectorAll('.tab-content');
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      // 移除所有活动类
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+
+      // 添加活动类到当前按钮和对应内容
+      button.classList.add('active');
+      const tabId = button.getAttribute('data-tab');
+      document.getElementById(`${tabId}-tab`).classList.add('active');
+    });
+  });
+
+  // 如果是编辑模式，预填连接字符串
+  if (dbData) {
+    const connectionStringInput = modal.querySelector('#dbConnectionString');
+    if (connectionStringInput && dbData.user && dbData.host) {
+      const connectionString = `${dbData.user}:${dbData.password}@tcp(${dbData.host}:${dbData.port})/${dbData.databases.join(',')}`;
+      connectionStringInput.value = connectionString;
+    }
+  }
+
+  // 连接字符串解析函数
+  function parseConnectionString(connectionString) {
+    try {
+      // 基本格式: user:password@tcp(host:port)/database
+      const result = {};
+
+      // 提取用户名和密码
+      const authPart = connectionString.split('@')[0];
+      if (authPart) {
+        const authParts = authPart.split(':');
+        result.user = authParts[0];
+        result.password = authParts[1] || '';
+      }
+
+      // 提取主机和端口
+      const hostMatch = connectionString.match(/tcp\(([^:]+):(\d+)\)/);
+      if (hostMatch) {
+        result.host = hostMatch[1];
+        result.port = hostMatch[2];
+      }
+
+      // 提取数据库名称
+      const dbMatch = connectionString.match(/\/([^?]+)/);
+      if (dbMatch) {
+        result.databases = dbMatch[1].split(',');
+      }
+
+      return result;
+    } catch (error) {
+      console.error('解析连接字符串失败:', error);
+      return null;
+    }
+  }
+
+  // 连接字符串输入变化时，自动填充高级模式字段
+  const connectionStringInput = modal.querySelector('#dbConnectionString');
+  if (connectionStringInput) {
+    connectionStringInput.addEventListener('input', () => {
+      const connectionString = connectionStringInput.value.trim();
+      if (connectionString) {
+        const parsedData = parseConnectionString(connectionString);
+        if (parsedData) {
+          // 填充高级模式字段
+          if (parsedData.host) modal.querySelector('#dbHost').value = parsedData.host;
+          if (parsedData.port) modal.querySelector('#dbPort').value = parsedData.port;
+          if (parsedData.user) modal.querySelector('#dbUser').value = parsedData.user;
+          if (parsedData.password) modal.querySelector('#dbPassword').value = parsedData.password;
+          if (parsedData.databases) modal.querySelector('#dbDatabases').value = parsedData.databases.join(', ');
+        }
+      }
+    });
+  }
+
   // 表单提交
   const form = modal.querySelector('#databaseForm');
   form.addEventListener('submit', async (e) => {
@@ -324,6 +423,34 @@ function showDatabaseModal(dbData = null) {
 
     const formData = new FormData(form);
     const dbFormError = document.getElementById('dbFormError');
+
+    // 检查是否使用了连接字符串
+    const connectionString = formData.get('connectionString');
+    if (connectionString && connectionString.trim()) {
+      const parsedData = parseConnectionString(connectionString.trim());
+      if (parsedData) {
+        // 使用解析的数据替换表单数据
+        if (parsedData.host) formData.set('host', parsedData.host);
+        if (parsedData.port) formData.set('port', parsedData.port);
+        if (parsedData.user) formData.set('user', parsedData.user);
+        if (parsedData.password) formData.set('password', parsedData.password);
+        if (parsedData.databases) formData.set('databases', parsedData.databases.join(', '));
+      } else {
+        dbFormError.textContent = '连接字符串格式无效，请检查后重试';
+        return;
+      }
+    }
+
+    // 验证必填字段
+    const name = formData.get('name');
+    const host = formData.get('host');
+    const user = formData.get('user');
+    const databases = formData.get('databases');
+
+    if (!name || !host || !user || !databases) {
+      dbFormError.textContent = '请填写所有必要字段';
+      return;
+    }
 
     try {
       const url = dbData ? `/api/databases/${dbData.id}` : '/api/databases';

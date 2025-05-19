@@ -400,6 +400,40 @@ app.post("/api/settings/backup", authMiddleware, async (c) => {
   return c.json({ success: true, message: "备份设置已更新" });
 });
 
+// 解析MySQL连接字符串
+function parseMySQLConnectionString(connectionString) {
+  try {
+    // 基本格式: user:password@tcp(host:port)/database
+    const result = {};
+
+    // 提取用户名和密码
+    const authPart = connectionString.split('@')[0];
+    if (authPart) {
+      const authParts = authPart.split(':');
+      result.user = authParts[0];
+      result.password = authParts[1] || '';
+    }
+
+    // 提取主机和端口
+    const hostMatch = connectionString.match(/tcp\(([^:]+):(\d+)\)/);
+    if (hostMatch) {
+      result.host = hostMatch[1];
+      result.port = parseInt(hostMatch[2]);
+    }
+
+    // 提取数据库名称
+    const dbMatch = connectionString.match(/\/([^?]+)/);
+    if (dbMatch) {
+      result.databases = dbMatch[1].split(',').map(db => db.trim());
+    }
+
+    return result;
+  } catch (error) {
+    console.error('解析连接字符串失败:', error);
+    return null;
+  }
+}
+
 // 数据库配置API
 // 获取所有数据库配置
 app.get("/api/databases", authMiddleware, async (c) => {
@@ -432,10 +466,42 @@ app.get("/api/databases/:id", authMiddleware, async (c) => {
 
 app.post("/api/databases", authMiddleware, async (c) => {
   const user = c.get("user");
-  const data = await c.req.parseBody();
+  let body;
+
+  // 尝试解析不同格式的请求体
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      body = await c.req.json();
+    } else {
+      body = await c.req.parseBody();
+    }
+  } catch (error) {
+    console.error("解析请求体失败:", error);
+    return c.json({ success: false, message: "无效的请求格式" }, 400);
+  }
+
+  // 检查是否提供了连接字符串
+  if (body.connectionString && body.connectionString.trim()) {
+    console.log("检测到连接字符串，正在解析...");
+    const parsedData = parseMySQLConnectionString(body.connectionString.trim());
+    if (parsedData) {
+      console.log("连接字符串解析结果:", parsedData);
+      // 使用解析的数据填充必要字段
+      body.host = parsedData.host || body.host;
+      body.port = parsedData.port || body.port;
+      body.user = parsedData.user || body.user;
+      body.password = parsedData.password || body.password;
+      if (parsedData.databases && parsedData.databases.length > 0) {
+        body.databases = parsedData.databases.join(',');
+      }
+    } else {
+      return c.json({ success: false, message: "连接字符串格式无效，请检查后重试" }, 400);
+    }
+  }
 
   // 验证输入
-  if (!data.name || !data.host || !data.user || !data.databases) {
+  if (!body.name || !body.host || !body.user || !body.databases) {
     return c.json({ success: false, message: "缺少必要的字段" }, 400);
   }
 
@@ -446,12 +512,12 @@ app.post("/api/databases", authMiddleware, async (c) => {
   // 创建新配置
   const newConfig = {
     id: nanoid(),
-    name: data.name,
-    host: data.host,
-    port: parseInt(data.port || "3306"),
-    user: data.user,
-    password: data.password,
-    databases: data.databases.split(',').map(db => db.trim()),
+    name: body.name,
+    host: body.host,
+    port: parseInt(body.port || "3306"),
+    user: body.user,
+    password: body.password,
+    databases: body.databases.split(',').map(db => db.trim()),
     createdAt: new Date().toISOString()
   };
 
@@ -467,7 +533,20 @@ app.post("/api/databases", authMiddleware, async (c) => {
 app.put("/api/databases/:id", authMiddleware, async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const data = await c.req.parseBody();
+  let body;
+
+  // 尝试解析不同格式的请求体
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      body = await c.req.json();
+    } else {
+      body = await c.req.parseBody();
+    }
+  } catch (error) {
+    console.error("解析请求体失败:", error);
+    return c.json({ success: false, message: "无效的请求格式" }, 400);
+  }
 
   // 获取现有配置
   const dbConfigsResult = await kv.get(["dbConfigs", user.id]);
@@ -479,15 +558,35 @@ app.put("/api/databases/:id", authMiddleware, async (c) => {
     return c.json({ success: false, message: "未找到指定的数据库配置" }, 404);
   }
 
+  // 检查是否提供了连接字符串
+  if (body.connectionString && body.connectionString.trim()) {
+    console.log("检测到连接字符串，正在解析...");
+    const parsedData = parseMySQLConnectionString(body.connectionString.trim());
+    if (parsedData) {
+      console.log("连接字符串解析结果:", parsedData);
+      // 使用解析的数据填充必要字段
+      body.host = parsedData.host || body.host;
+      body.port = parsedData.port || body.port;
+      body.user = parsedData.user || body.user;
+      body.password = parsedData.password || body.password;
+      if (parsedData.databases && parsedData.databases.length > 0) {
+        body.databases = parsedData.databases.join(',');
+      }
+    } else {
+      return c.json({ success: false, message: "连接字符串格式无效，请检查后重试" }, 400);
+    }
+  }
+
   // 更新配置
   dbConfigs[configIndex] = {
     ...dbConfigs[configIndex],
-    name: data.name || dbConfigs[configIndex].name,
-    host: data.host || dbConfigs[configIndex].host,
-    port: parseInt(data.port || dbConfigs[configIndex].port),
-    user: data.user || dbConfigs[configIndex].user,
-    password: data.password || dbConfigs[configIndex].password,
-    databases: data.databases ? data.databases.split(',').map(db => db.trim()) : dbConfigs[configIndex].databases,
+    name: body.name || dbConfigs[configIndex].name,
+    host: body.host || dbConfigs[configIndex].host,
+    port: parseInt(body.port || dbConfigs[configIndex].port),
+    user: body.user || dbConfigs[configIndex].user,
+    // 只有在提供了新密码时才更新密码
+    password: body.password ? body.password : dbConfigs[configIndex].password,
+    databases: body.databases ? body.databases.split(',').map(db => db.trim()) : dbConfigs[configIndex].databases,
     updatedAt: new Date().toISOString()
   };
 
