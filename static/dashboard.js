@@ -1194,70 +1194,103 @@ async function showScheduleBackupModal() {
     if (loadingIndicator) loadingIndicator.style.display = 'none';
     if (backupForm) backupForm.style.display = 'block';
 
+    // 添加调试信息
+    console.log('DOM元素状态:');
+    console.log('- loadingIndicator:', loadingIndicator ? '已找到' : '未找到');
+    console.log('- backupForm:', backupForm ? '已找到' : '未找到');
+
     // 如果有现有配置，填充表单
     if (data.success && data.config) {
       const config = data.config;
       console.log('填充现有配置:', config);
+      console.log('配置类型:', typeof config);
+      console.log('配置JSON:', JSON.stringify(config));
 
       try {
+        // 记录所有表单元素
+        const formElements = {
+          frequencySelect: document.getElementById('backupFrequency'),
+          weekdayGroup: document.getElementById('weekdayGroup'),
+          weekdaySelect: document.getElementById('backupWeekday'),
+          dayOfMonthGroup: document.getElementById('dayOfMonthGroup'),
+          dayOfMonthSelect: document.getElementById('backupDayOfMonth'),
+          timeInput: document.getElementById('backupTime'),
+          retentionInput: document.getElementById('backupRetention')
+        };
+
+        console.log('表单元素状态:', Object.entries(formElements).map(([key, el]) => `${key}: ${el ? '已找到' : '未找到'}`).join(', '));
+
         // 设置频率
-        const frequencySelect = document.getElementById('backupFrequency');
-        if (frequencySelect && config.frequency) {
+        if (formElements.frequencySelect && config.frequency) {
           console.log(`设置频率: ${config.frequency}`);
-          frequencySelect.value = config.frequency;
+          formElements.frequencySelect.value = config.frequency;
+
+          // 根据频率显示/隐藏相关选项
+          if (config.frequency === 'weekly') {
+            if (formElements.weekdayGroup) formElements.weekdayGroup.style.display = 'block';
+            if (formElements.dayOfMonthGroup) formElements.dayOfMonthGroup.style.display = 'none';
+          } else if (config.frequency === 'monthly') {
+            if (formElements.weekdayGroup) formElements.weekdayGroup.style.display = 'none';
+            if (formElements.dayOfMonthGroup) formElements.dayOfMonthGroup.style.display = 'block';
+          } else {
+            if (formElements.weekdayGroup) formElements.weekdayGroup.style.display = 'none';
+            if (formElements.dayOfMonthGroup) formElements.dayOfMonthGroup.style.display = 'none';
+          }
         } else {
-          console.warn('无法设置频率:', frequencySelect, config.frequency);
+          console.warn('无法设置频率:', formElements.frequencySelect, config.frequency);
         }
 
         // 设置星期几（如果适用）
-        const weekdayGroup = document.getElementById('weekdayGroup');
-        const weekdaySelect = document.getElementById('backupWeekday');
         if (config.frequency === 'weekly' && config.weekday !== undefined) {
-          console.log(`设置星期几: ${config.weekday}`);
-          if (weekdayGroup) weekdayGroup.style.display = 'block';
-          if (weekdaySelect) {
+          console.log(`设置星期几: ${config.weekday} (类型: ${typeof config.weekday})`);
+          if (formElements.weekdaySelect) {
             // 确保weekday是字符串
-            weekdaySelect.value = String(config.weekday);
-            console.log(`星期几选择器值已设置为: ${weekdaySelect.value}`);
+            formElements.weekdaySelect.value = String(config.weekday);
+            console.log(`星期几选择器值已设置为: ${formElements.weekdaySelect.value}`);
           } else {
             console.warn('未找到星期几选择器元素');
           }
         }
 
         // 设置日期（如果适用）
-        const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
-        const dayOfMonthSelect = document.getElementById('backupDayOfMonth');
         if (config.frequency === 'monthly' && config.dayOfMonth !== undefined) {
-          console.log(`设置日期: ${config.dayOfMonth}`);
-          if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
-          if (dayOfMonthSelect) {
+          console.log(`设置日期: ${config.dayOfMonth} (类型: ${typeof config.dayOfMonth})`);
+          if (formElements.dayOfMonthSelect) {
             // 确保dayOfMonth是字符串
-            dayOfMonthSelect.value = String(config.dayOfMonth);
-            console.log(`日期选择器值已设置为: ${dayOfMonthSelect.value}`);
+            formElements.dayOfMonthSelect.value = String(config.dayOfMonth);
+            console.log(`日期选择器值已设置为: ${formElements.dayOfMonthSelect.value}`);
           } else {
             console.warn('未找到日期选择器元素');
           }
         }
 
         // 设置时间
-        const timeInput = document.getElementById('backupTime');
-        if (timeInput && config.time) {
+        if (formElements.timeInput && config.time) {
           console.log(`设置时间: ${config.time}`);
-          timeInput.value = config.time;
+          formElements.timeInput.value = config.time;
         } else {
-          console.warn('无法设置时间:', timeInput, config.time);
+          console.warn('无法设置时间:', formElements.timeInput, config.time);
         }
 
         // 设置保留天数
-        const retentionInput = document.getElementById('backupRetention');
-        if (retentionInput && config.retention !== undefined) {
-          console.log(`设置保留天数: ${config.retention}`);
-          retentionInput.value = config.retention;
+        if (formElements.retentionInput && config.retention !== undefined) {
+          console.log(`设置保留天数: ${config.retention} (类型: ${typeof config.retention})`);
+          formElements.retentionInput.value = config.retention;
         } else {
-          console.warn('无法设置保留天数:', retentionInput, config.retention);
+          console.warn('无法设置保留天数:', formElements.retentionInput, config.retention);
         }
 
         console.log('表单填充完成');
+
+        // 验证表单值是否正确设置
+        setTimeout(() => {
+          console.log('验证表单值:');
+          console.log('- 频率:', formElements.frequencySelect ? formElements.frequencySelect.value : '未找到');
+          console.log('- 星期几:', formElements.weekdaySelect ? formElements.weekdaySelect.value : '未找到');
+          console.log('- 日期:', formElements.dayOfMonthSelect ? formElements.dayOfMonthSelect.value : '未找到');
+          console.log('- 时间:', formElements.timeInput ? formElements.timeInput.value : '未找到');
+          console.log('- 保留天数:', formElements.retentionInput ? formElements.retentionInput.value : '未找到');
+        }, 100);
       } catch (fillError) {
         console.error('填充表单时出错:', fillError);
       }

@@ -4,6 +4,7 @@
 // 导入必要的库
 import mysql from "npm:mysql2/promise";
 import { gzip } from "https://deno.land/x/compress@v0.4.5/mod.ts";
+import { nanoid } from "https://esm.sh/nanoid@3.3.4";
 
 // 日志函数
 function logInfo(message) {
@@ -283,45 +284,168 @@ async function performBackup() {
 }
 
 // 定时备份功能
-async function setupScheduledBackups() {
-  // 每天凌晨4点执行备份
-  const BACKUP_HOUR = 4;
-
-  logInfo(`设置定时备份任务，将在每天凌晨 ${BACKUP_HOUR} 点执行`);
+export async function setupScheduledBackups(kv, executeBackup, cleanupOldBackups) {
+  logInfo(`设置计划备份任务检查器`);
 
   // 检查是否需要执行备份的函数
   async function checkAndRunBackup() {
     const now = new Date();
-    const hour = now.getHours();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentDay = now.getDate();
+    const currentWeekday = now.getDay(); // 0-6, 0表示星期日
 
-    // 如果是指定的备份时间
-    if (hour === BACKUP_HOUR) {
-      const today = now.toISOString().substring(0, 10);
-      const backupMarker = `/tmp/backup_executed_${today}`;
+    // 只在整点的前5分钟内检查，避免重复执行
+    if (currentMinute > 5) {
+      return;
+    }
 
-      try {
-        // 检查今天是否已经执行过备份
-        await Deno.stat(backupMarker);
-        // 文件存在，今天已经备份过
-      } catch {
-        // 文件不存在，执行备份
-        logInfo("开始执行每日定时备份...");
+    try {
+      // 获取所有用户的计划备份设置
+      const kvPrefix = ["backupSchedule"];
+      const scheduleEntries = kv.list({ prefix: kvPrefix });
+
+      logInfo(`检查用户计划备份设置`);
+
+      // 为每个用户检查计划备份设置
+      for await (const entry of scheduleEntries) {
         try {
-          const result = await performBackup();
-          // 创建标记文件，表示今天已经执行过备份
-          await Deno.writeTextFile(backupMarker, JSON.stringify(result));
+          const userId = entry.key[1]; // 键格式为 ["backupSchedule", userId]
+          const scheduleConfig = entry.value;
 
-          if (result.success) {
-            logInfo(`每日备份完成，成功备份了 ${result.databases.success.length} 个数据库`);
-          } else {
-            logInfo(`每日备份部分完成，成功: ${result.databases.success.length} 个，失败: ${result.databases.failed.length} 个`);
+          if (!scheduleConfig) {
+            continue; // 用户没有设置计划备份
           }
 
-          logInfo("下次备份将在明天凌晨执行");
-        } catch (error) {
-          logError("定时备份失败", error);
+          // 解析备份时间
+          const [scheduledHour] = scheduleConfig.time.split(':').map(Number);
+
+          // 检查是否是备份时间
+          if (currentHour !== scheduledHour) {
+            continue; // 不是备份时间
+          }
+
+          // 根据频率检查是否应该执行备份
+          let shouldRunBackup = false;
+
+          if (scheduleConfig.frequency === 'daily') {
+            shouldRunBackup = true;
+          } else if (scheduleConfig.frequency === 'weekly' && scheduleConfig.weekday !== undefined) {
+            // 检查是否是指定的星期几
+            shouldRunBackup = (currentWeekday === scheduleConfig.weekday);
+          } else if (scheduleConfig.frequency === 'monthly' && scheduleConfig.dayOfMonth !== undefined) {
+            // 检查是否是指定的日期
+            shouldRunBackup = (currentDay === scheduleConfig.dayOfMonth);
+          }
+
+          if (!shouldRunBackup) {
+            continue;
+          }
+
+          // 检查今天是否已经执行过备份
+          const today = now.toISOString().substring(0, 10);
+          const backupMarker = `/tmp/backup_executed_${userId}_${today}`;
+
+          try {
+            // 检查今天是否已经执行过备份
+            await Deno.stat(backupMarker);
+            // 文件存在，今天已经备份过
+            continue;
+          } catch {
+            // 文件不存在，执行备份
+          }
+
+          // 获取用户信息
+          const userResult = await kv.get(["users", userId]);
+          const user = userResult.value;
+
+          if (!user) {
+            logError(`找不到用户 ID: ${userId}`);
+            continue;
+          }
+
+          logInfo(`开始为用户 ${user.username} 执行计划备份...`);
+          logInfo(`备份频率: ${scheduleConfig.frequency}, 时间: ${scheduleConfig.time}`);
+
+          try {
+            // 获取数据库配置
+            const dbConfigsResult = await kv.get(["dbConfigs", userId]);
+            const dbConfigs = dbConfigsResult.value || [];
+
+            if (dbConfigs.length === 0) {
+              logInfo(`用户 ${user.username} 没有数据库配置，跳过备份`);
+              continue;
+            }
+
+            // 获取存储配置
+            const storageConfigsResult = await kv.get(["storageConfigs", userId]);
+            const storageConfigs = storageConfigsResult.value || [];
+
+            const activeStorageConfigs = storageConfigs.filter(config => config.active);
+            if (activeStorageConfigs.length === 0) {
+              logInfo(`用户 ${user.username} 没有活跃的存储配置，跳过备份`);
+              continue;
+            }
+
+            // 创建备份任务
+            const backupId = nanoid();
+            const backupTask = {
+              id: backupId,
+              userId: userId,
+              status: "pending",
+              databases: dbConfigs.map(db => ({
+                id: db.id,
+                name: db.name,
+                host: db.host,
+                port: db.port,
+                user: db.user,
+                password: db.password,
+                databases: db.databases
+              })),
+              storage: activeStorageConfigs[0],
+              createdAt: new Date().toISOString(),
+              isScheduled: true,
+              scheduleConfig: {
+                frequency: scheduleConfig.frequency,
+                time: scheduleConfig.time,
+                retention: scheduleConfig.retention
+              }
+            };
+
+            // 保存备份任务
+            await kv.set(["backupTasks", backupId], backupTask);
+
+            // 执行备份
+            executeBackup(backupTask).then(async () => {
+              // 创建标记文件，表示今天已经执行过备份
+              await Deno.writeTextFile(backupMarker, JSON.stringify({
+                taskId: backupId,
+                executedAt: new Date().toISOString()
+              }));
+
+              logInfo(`用户 ${user.username} 的计划备份完成，任务ID: ${backupId}`);
+
+              // 清理旧备份
+              if (scheduleConfig.retention > 0) {
+                try {
+                  await cleanupOldBackups(scheduleConfig.retention);
+                  logInfo(`已清理 ${scheduleConfig.retention} 天前的旧备份`);
+                } catch (cleanupError) {
+                  logError(`清理旧备份失败: ${cleanupError.message}`);
+                }
+              }
+            }).catch(error => {
+              logError(`执行用户 ${user.username} 的计划备份失败: ${error.message}`, error);
+            });
+          } catch (error) {
+            logError(`为用户 ${user.username} 创建备份任务失败: ${error.message}`, error);
+          }
+        } catch (userError) {
+          logError(`处理用户计划备份设置时出错: ${userError.message}`, userError);
         }
       }
+    } catch (error) {
+      logError(`检查计划备份设置时出错: ${error.message}`, error);
     }
   }
 
@@ -331,11 +455,6 @@ async function setupScheduledBackups() {
   // 立即检查一次
   await checkAndRunBackup();
 }
-
-// 启动定时备份
-setupScheduledBackups().catch(error => {
-  logError("设置定时备份失败", error);
-});
 
 // 上传备份到 Backblaze B2
 async function uploadToB2(contentOrFilePath, fileName, keyId, applicationKey, bucketName) {
