@@ -1028,10 +1028,27 @@ app.get("/api/backup/schedule", authMiddleware, async (c) => {
 
     // 获取用户的计划备份配置
     const scheduleConfigResult = await kv.get(["backupSchedule", user.id]);
-    const scheduleConfig = scheduleConfigResult.value || null;
+    let scheduleConfig = scheduleConfigResult.value || null;
 
     if (scheduleConfig) {
-      logInfo(`成功获取用户 ${user.username} 的计划备份设置: ${JSON.stringify(scheduleConfig)}`);
+      // 确保所有必要的字段都存在
+      if (typeof scheduleConfig !== 'object') {
+        logError(`计划备份配置格式错误: ${JSON.stringify(scheduleConfig)}`);
+        scheduleConfig = null;
+      } else {
+        // 确保数值类型字段正确
+        if (scheduleConfig.retention) {
+          scheduleConfig.retention = parseInt(scheduleConfig.retention);
+        }
+        if (scheduleConfig.weekday !== undefined) {
+          scheduleConfig.weekday = parseInt(scheduleConfig.weekday);
+        }
+        if (scheduleConfig.dayOfMonth !== undefined) {
+          scheduleConfig.dayOfMonth = parseInt(scheduleConfig.dayOfMonth);
+        }
+
+        logInfo(`成功获取用户 ${user.username} 的计划备份设置: ${JSON.stringify(scheduleConfig)}`);
+      }
     } else {
       logInfo(`用户 ${user.username} 没有现有的计划备份设置`);
     }
@@ -1100,15 +1117,29 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
   };
 
   // 添加频率特定字段
-  if (body.frequency === 'weekly') {
+  if (body.frequency === 'weekly' && body.weekday) {
     scheduleConfig.weekday = parseInt(body.weekday);
-  } else if (body.frequency === 'monthly') {
+  } else if (body.frequency === 'monthly' && body.dayOfMonth) {
     scheduleConfig.dayOfMonth = parseInt(body.dayOfMonth);
   }
+
+  // 记录详细的配置信息
+  logInfo(`计划备份配置详情:
+    频率: ${scheduleConfig.frequency}
+    时间: ${scheduleConfig.time}
+    保留天数: ${scheduleConfig.retention}
+    星期几: ${scheduleConfig.weekday || '不适用'}
+    日期: ${scheduleConfig.dayOfMonth || '不适用'}
+    用户ID: ${scheduleConfig.userId}
+    更新时间: ${scheduleConfig.updatedAt}
+  `);
 
   // 保存配置
   try {
     logInfo(`尝试保存计划备份配置: ${JSON.stringify(scheduleConfig)}`);
+
+    // 先删除旧配置，再保存新配置，避免合并问题
+    await kv.delete(["backupSchedule", user.id]);
 
     // 使用 atomic 操作确保写入成功
     const result = await kv.atomic()
@@ -1119,7 +1150,14 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
       throw new Error(`KV 原子操作失败: ${result.toString()}`);
     }
 
+    // 验证保存是否成功
+    const verifyResult = await kv.get(["backupSchedule", user.id]);
+    if (!verifyResult.value) {
+      throw new Error("保存后无法验证配置，KV存储可能有问题");
+    }
+
     logInfo(`用户 ${user.username} 设置了计划备份: ${body.frequency}, 保存成功`);
+    logInfo(`验证保存的配置: ${JSON.stringify(verifyResult.value)}`);
 
     return c.json({
       success: true,

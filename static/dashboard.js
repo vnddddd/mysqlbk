@@ -1199,39 +1199,70 @@ async function showScheduleBackupModal() {
       const config = data.config;
       console.log('填充现有配置:', config);
 
-      // 设置频率
-      const frequencySelect = document.getElementById('backupFrequency');
-      if (frequencySelect && config.frequency) {
-        frequencySelect.value = config.frequency;
-      }
+      try {
+        // 设置频率
+        const frequencySelect = document.getElementById('backupFrequency');
+        if (frequencySelect && config.frequency) {
+          console.log(`设置频率: ${config.frequency}`);
+          frequencySelect.value = config.frequency;
+        } else {
+          console.warn('无法设置频率:', frequencySelect, config.frequency);
+        }
 
-      // 设置星期几（如果适用）
-      const weekdayGroup = document.getElementById('weekdayGroup');
-      const weekdaySelect = document.getElementById('backupWeekday');
-      if (config.frequency === 'weekly' && config.weekday !== undefined) {
-        if (weekdayGroup) weekdayGroup.style.display = 'block';
-        if (weekdaySelect) weekdaySelect.value = config.weekday;
-      }
+        // 设置星期几（如果适用）
+        const weekdayGroup = document.getElementById('weekdayGroup');
+        const weekdaySelect = document.getElementById('backupWeekday');
+        if (config.frequency === 'weekly' && config.weekday !== undefined) {
+          console.log(`设置星期几: ${config.weekday}`);
+          if (weekdayGroup) weekdayGroup.style.display = 'block';
+          if (weekdaySelect) {
+            // 确保weekday是字符串
+            weekdaySelect.value = String(config.weekday);
+            console.log(`星期几选择器值已设置为: ${weekdaySelect.value}`);
+          } else {
+            console.warn('未找到星期几选择器元素');
+          }
+        }
 
-      // 设置日期（如果适用）
-      const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
-      const dayOfMonthSelect = document.getElementById('backupDayOfMonth');
-      if (config.frequency === 'monthly' && config.dayOfMonth !== undefined) {
-        if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
-        if (dayOfMonthSelect) dayOfMonthSelect.value = config.dayOfMonth;
-      }
+        // 设置日期（如果适用）
+        const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
+        const dayOfMonthSelect = document.getElementById('backupDayOfMonth');
+        if (config.frequency === 'monthly' && config.dayOfMonth !== undefined) {
+          console.log(`设置日期: ${config.dayOfMonth}`);
+          if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
+          if (dayOfMonthSelect) {
+            // 确保dayOfMonth是字符串
+            dayOfMonthSelect.value = String(config.dayOfMonth);
+            console.log(`日期选择器值已设置为: ${dayOfMonthSelect.value}`);
+          } else {
+            console.warn('未找到日期选择器元素');
+          }
+        }
 
-      // 设置时间
-      const timeInput = document.getElementById('backupTime');
-      if (timeInput && config.time) {
-        timeInput.value = config.time;
-      }
+        // 设置时间
+        const timeInput = document.getElementById('backupTime');
+        if (timeInput && config.time) {
+          console.log(`设置时间: ${config.time}`);
+          timeInput.value = config.time;
+        } else {
+          console.warn('无法设置时间:', timeInput, config.time);
+        }
 
-      // 设置保留天数
-      const retentionInput = document.getElementById('backupRetention');
-      if (retentionInput && config.retention) {
-        retentionInput.value = config.retention;
+        // 设置保留天数
+        const retentionInput = document.getElementById('backupRetention');
+        if (retentionInput && config.retention !== undefined) {
+          console.log(`设置保留天数: ${config.retention}`);
+          retentionInput.value = config.retention;
+        } else {
+          console.warn('无法设置保留天数:', retentionInput, config.retention);
+        }
+
+        console.log('表单填充完成');
+      } catch (fillError) {
+        console.error('填充表单时出错:', fillError);
       }
+    } else {
+      console.log('没有现有配置或获取配置失败:', data);
     }
   } catch (error) {
     console.error('获取计划备份设置失败:', error);
@@ -1285,22 +1316,43 @@ async function showScheduleBackupModal() {
         submitButton.disabled = true;
         submitButton.textContent = '保存中...';
 
+        // 获取表单数据
+        const frequency = formData.get('frequency');
+        const time = formData.get('time');
+        const retention = formData.get('retention');
+
+        // 验证必填字段
+        if (!frequency || !time || !retention) {
+          throw new Error('请填写所有必填字段');
+        }
+
         // 构建请求数据
         const requestData = {
-          frequency: formData.get('frequency'),
-          time: formData.get('time'),
-          retention: formData.get('retention')
+          frequency: frequency,
+          time: time,
+          retention: parseInt(retention)
         };
 
         // 根据频率添加特定字段
-        if (requestData.frequency === 'weekly') {
-          requestData.weekday = formData.get('weekday');
-        } else if (requestData.frequency === 'monthly') {
-          requestData.dayOfMonth = formData.get('dayOfMonth');
+        if (frequency === 'weekly') {
+          const weekday = formData.get('weekday');
+          if (!weekday) {
+            throw new Error('每周备份需要指定星期几');
+          }
+          requestData.weekday = parseInt(weekday);
+          console.log(`添加星期几字段: ${requestData.weekday} (${typeof requestData.weekday})`);
+        } else if (frequency === 'monthly') {
+          const dayOfMonth = formData.get('dayOfMonth');
+          if (!dayOfMonth) {
+            throw new Error('每月备份需要指定日期');
+          }
+          requestData.dayOfMonth = parseInt(dayOfMonth);
+          console.log(`添加日期字段: ${requestData.dayOfMonth} (${typeof requestData.dayOfMonth})`);
         }
 
-        console.log('提交计划备份设置:', requestData);
+        console.log('提交计划备份设置:', JSON.stringify(requestData, null, 2));
 
+        // 发送请求
         const response = await fetch('/api/backup/schedule', {
           method: 'POST',
           headers: {
@@ -1314,12 +1366,18 @@ async function showScheduleBackupModal() {
         console.log('服务器响应数据:', data);
 
         if (response.ok && data.success) {
+          console.log('保存成功，配置:', data.config);
           alert('计划备份设置已保存');
+
           // 安全地移除模态框
           if (document.body.contains(modal)) {
             document.body.removeChild(modal);
           }
-          window.location.reload();
+
+          // 延迟刷新页面，确保服务器有足够时间处理数据
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
         } else {
           let errorMsg = data.message || '保存计划备份设置失败';
           if (data.error) {
