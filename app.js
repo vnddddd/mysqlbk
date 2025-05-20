@@ -1469,15 +1469,17 @@ async function executeBackup(task) {
           // 进行压缩
           compressedData = await gzip(backupData);
           
-          // 释放未压缩数据的引用
-          backupData.length = 0;
+          // 释放未压缩数据的引用 - 修复TypedArray不能设置length的问题
+          // backupData.length = 0; // 旧代码，在TypedArray上不起作用
+          // 正确做法：直接将变量设为null，让垃圾回收器处理
+          backupData = null;
           
           // 生成文件名
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const gzipFileName = `backup-${dbName}-${timestamp}.sql.gz`;
           const b2FileName = `mysql-backups/${gzipFileName}`;
 
-          logInfo(`数据库 ${dbName} 备份完成，大小: ${compressedData.length} 字节`);
+          logInfo(`数据库 ${dbName} 备份完成，大小: ${formatBytes(compressedData.length)} 字节`);
 
           // 上传到B2
           try {
@@ -1489,7 +1491,7 @@ async function executeBackup(task) {
               task.storage.bucketName
             );
 
-            logInfo(`文件上传成功: ${b2FileName}, 大小: ${compressedData.length} 字节`);
+            logInfo(`文件上传成功: ${b2FileName}, 大小: ${formatBytes(compressedData.length)} 字节`);
             
             // 释放压缩数据的内存
             logInfo(`释放备份数据内存: ${dbName}`);
@@ -1671,7 +1673,7 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
       try {
         const [tableSizeResult] = await connection.query(`
           SELECT 
-            table_rows as rows, 
+            table_rows,
             data_length + index_length AS size
           FROM information_schema.tables 
           WHERE table_schema = ? AND table_name = ?`, 
@@ -1679,7 +1681,7 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
         
         if (tableSizeResult && tableSizeResult[0]) {
           const tableSizeMB = Math.round(tableSizeResult[0].size / (1024 * 1024) * 100) / 100;
-          const estimatedRows = tableSizeResult[0].rows || 'Unknown';
+          const estimatedRows = tableSizeResult[0].table_rows || 'Unknown';
           logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length}) - 估计大小: ${tableSizeMB} MB, 估计行数: ${estimatedRows}`);
         } else {
           logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length})`);
@@ -1855,8 +1857,10 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
               
               // 主动释放这一页的数据引用，帮助垃圾回收
               const rowsLength = rows.length;
-              // 清空rows引用
-              rows.length = 0;
+              // 清空rows引用 - 不能直接设置length=0，可能是TypedArray
+              // rows.length = 0; // 这可能导致TypeError
+              // 保存长度信息后将rows设置为null更安全
+              rows = null;
               
               // 在批量插入较大的表时提供进度反馈
               const progressPercent = Math.min(100, Math.round((currentPage * pageSize) / totalRows * 100));
