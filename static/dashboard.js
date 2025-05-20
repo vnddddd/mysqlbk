@@ -1,4 +1,53 @@
 // 仪表板页面脚本
+
+// 模态框点击外部区域关闭确认函数 - 防止误操作
+function setupModalCloseConfirmation(modal) {
+  let clickOutsideTime = 0;
+  const clickConfirmTimeout = 2000; // 2秒内需要再次点击才会关闭
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      const now = new Date().getTime();
+      
+      // 第一次点击或超时
+      if (clickOutsideTime === 0 || now - clickOutsideTime > clickConfirmTimeout) {
+        clickOutsideTime = now;
+        
+        // 创建一个提示元素
+        const confirmToast = document.createElement('div');
+        confirmToast.style.position = 'absolute';
+        confirmToast.style.bottom = '20px';
+        confirmToast.style.left = '50%';
+        confirmToast.style.transform = 'translateX(-50%)';
+        confirmToast.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        confirmToast.style.color = 'white';
+        confirmToast.style.padding = '10px 20px';
+        confirmToast.style.borderRadius = '4px';
+        confirmToast.style.zIndex = '2000';
+        confirmToast.textContent = '再次点击空白区域关闭对话框';
+        
+        modal.appendChild(confirmToast);
+        
+        // 2秒后自动移除提示
+        setTimeout(() => {
+          if (modal.contains(confirmToast)) {
+            modal.removeChild(confirmToast);
+          }
+          clickOutsideTime = 0; // 重置时间
+        }, clickConfirmTimeout);
+        
+        console.log('第一次点击模态框外部，显示确认提示');
+      } else {
+        // 第二次点击，关闭模态框
+        console.log('在确认时间内再次点击，关闭模态框');
+        if (document.body.contains(modal)) {
+          document.body.removeChild(modal);
+        }
+      }
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // 导航菜单切换
   const navLinks = document.querySelectorAll('.dashboard-nav a');
@@ -751,12 +800,48 @@ function showBackupModal() {
     });
   });
 
-  // 点击模态框外部关闭
+  // 点击模态框外部 - 添加确认机制防止误操作
+  let clickOutsideTime = 0;
+  const clickConfirmTimeout = 2000; // 2秒内需要再次点击才会关闭
+  
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
-      console.log('点击模态框外部，关闭备份模态框');
-      if (document.body.contains(modal)) {
-        document.body.removeChild(modal);
+      const now = new Date().getTime();
+      
+      // 第一次点击或超时
+      if (clickOutsideTime === 0 || now - clickOutsideTime > clickConfirmTimeout) {
+        clickOutsideTime = now;
+        
+        // 创建一个提示元素
+        const confirmToast = document.createElement('div');
+        confirmToast.style.position = 'absolute';
+        confirmToast.style.bottom = '20px';
+        confirmToast.style.left = '50%';
+        confirmToast.style.transform = 'translateX(-50%)';
+        confirmToast.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        confirmToast.style.color = 'white';
+        confirmToast.style.padding = '10px 20px';
+        confirmToast.style.borderRadius = '4px';
+        confirmToast.style.zIndex = '2000';
+        confirmToast.textContent = '再次点击空白区域关闭对话框';
+        
+        modal.appendChild(confirmToast);
+        
+        // 2秒后自动移除提示
+        setTimeout(() => {
+          if (modal.contains(confirmToast)) {
+            modal.removeChild(confirmToast);
+          }
+          clickOutsideTime = 0; // 重置时间
+        }, clickConfirmTimeout);
+        
+        console.log('第一次点击模态框外部，显示确认提示');
+      } else {
+        // 第二次点击，关闭模态框
+        console.log('在确认时间内再次点击，关闭备份模态框');
+        if (document.body.contains(modal)) {
+          document.body.removeChild(modal);
+        }
       }
     }
   });
@@ -1081,6 +1166,9 @@ async function deleteStorage(storageId) {
 // 显示计划备份模态框
 async function showScheduleBackupModal() {
   console.log('执行 showScheduleBackupModal 函数');
+  
+  // 使用全局变量设置Modal ID防止重复定义问题
+  window.currentModalClickTimer = 0;
 
   // 检查是否已经有模态框打开
   if (document.querySelector('.modal')) {
@@ -1169,15 +1257,8 @@ async function showScheduleBackupModal() {
     });
   });
 
-  // 点击模态框外部关闭
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      console.log('点击模态框外部，关闭计划备份模态框');
-      if (document.body.contains(modal)) {
-        document.body.removeChild(modal);
-      }
-    }
-  });
+  // 点击模态框外部关闭 - 使用确认机制
+  setupModalCloseConfirmation(modal);
 
   // 注意：这里不再使用setFormValues函数，直接在代码中设置表单值
 
