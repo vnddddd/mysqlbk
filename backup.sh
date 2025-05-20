@@ -9,6 +9,27 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# 检查是否有用户自定义的计划备份
+check_user_schedules() {
+    log "检查用户自定义的计划备份设置..."
+    
+    # 这里我们应该从KV存储中读取计划备份设置
+    # 由于我们直接在bash脚本中无法访问Deno KV存储
+    # 可以通过创建一个API端点来读取设置，或者从配置文件中读取
+    
+    # 示例：这里我们假设系统将计划备份设置写入到一个JSON文件中
+    SCHEDULE_FILE="/app/data/backup_schedules.json"
+    
+    if [ -f "$SCHEDULE_FILE" ]; then
+        log "找到计划备份配置文件，准备解析..."
+        # 解析JSON并执行相应的备份
+        # 这里需要使用例如jq等工具解析JSON
+        # 根据频率、时间等执行备份
+    else
+        log "未找到用户自定义的计划备份配置，将使用默认设置"
+    fi
+}
+
 # 从环境变量获取数据库连接信息
 DB_HOST=${DB_HOST:-"localhost"}
 DB_PORT=${DB_PORT:-"3306"}
@@ -45,6 +66,9 @@ if ! mysql --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" --password="$DB
     log "错误: 无法连接到MySQL服务器，请检查连接信息和认证方式"
     exit 1
 fi
+
+# 检查用户自定义的计划备份
+check_user_schedules
 
 # 备份每个数据库
 IFS=',' read -ra DBS <<< "$DB_NAMES"

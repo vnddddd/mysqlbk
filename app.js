@@ -1020,7 +1020,7 @@ app.get("/api/backup/history", authMiddleware, async (c) => {
 });
 
 // 获取计划备份设置
-app.get("/api/backup/schedule", authMiddleware, async (c) => {
+const getScheduleHandler = async (c) => {
   const user = c.get("user");
 
   try {
@@ -1067,10 +1067,10 @@ app.get("/api/backup/schedule", authMiddleware, async (c) => {
       error: error.message || '未知错误'
     }, 500);
   }
-});
+};
 
-// 计划备份API
-app.post("/api/backup/schedule", authMiddleware, async (c) => {
+// 保存计划备份配置
+const postScheduleHandler = async (c) => {
   const user = c.get("user");
   let body;
 
@@ -1148,8 +1148,6 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
     频率: ${scheduleConfig.frequency}
     时间: ${scheduleConfig.time}
     保留天数: ${scheduleConfig.retention}
-    存储ID: ${scheduleConfig.storageId}
-    数据库IDs: ${JSON.stringify(scheduleConfig.databases)}
     星期几: ${scheduleConfig.weekday || '不适用'}
     日期: ${scheduleConfig.dayOfMonth || '不适用'}
     用户ID: ${scheduleConfig.userId}
@@ -1195,7 +1193,16 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
       error: error.message || '未知错误'
     }, 500);
   }
-});
+};
+
+// 注册多个路径以支持不同的URL格式
+app.get("/api/backup/schedule", authMiddleware, getScheduleHandler);
+app.get("/api/schedule", authMiddleware, getScheduleHandler); // 兼容旧路径
+app.get("/api/schedule/backup", authMiddleware, getScheduleHandler); // 另一种可能的路径
+
+app.post("/api/backup/schedule", authMiddleware, postScheduleHandler);
+app.post("/api/schedule", authMiddleware, postScheduleHandler); // 兼容旧路径
+app.post("/api/schedule/backup", authMiddleware, postScheduleHandler); // 另一种可能的路径
 
 // 下载备份API
 app.get("/api/backup/download", authMiddleware, async (c) => {
@@ -1968,3 +1975,98 @@ function renderDashboard(user, dbConfigs, storageConfigs, backupHistory, firstLo
 </html>
   `;
 }
+
+// 导出计划备份设置为JSON文件
+app.get("/api/backup/export-schedules", authMiddleware, async (c) => {
+  try {
+    logInfo(`导出所有计划备份设置到JSON文件`);
+
+    // 获取所有用户
+    const usersPrefix = ["users"];
+    const usersEntries = await kv.list({ prefix: usersPrefix });
+    
+    const schedules = [];
+    
+    // 遍历所有用户
+    for await (const entry of usersEntries) {
+      const userId = entry.key[1];
+      const username = entry.value.username;
+      
+      // 获取用户的计划备份设置
+      const scheduleConfigResult = await kv.get(["backupSchedule", userId]);
+      const scheduleConfig = scheduleConfigResult.value;
+      
+      if (scheduleConfig) {
+        // 获取用户的数据库配置
+        const dbConfigsResult = await kv.get(["dbConfigs", userId]);
+        const dbConfigs = dbConfigsResult.value || [];
+        
+        // 获取用户的存储配置
+        const storageConfigsResult = await kv.get(["storageConfigs", userId]);
+        const storageConfigs = storageConfigsResult.value || [];
+        
+        // 找到与计划关联的数据库和存储
+        const databases = scheduleConfig.databases.map(dbId => {
+          const dbConfig = dbConfigs.find(db => db.id === dbId);
+          if (!dbConfig) return null;
+          
+          return {
+            name: dbConfig.name,
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            databases: dbConfig.databases,
+            sslMode: dbConfig.sslMode
+          };
+        }).filter(db => db !== null);
+        
+        const storage = storageConfigs.find(s => s.id === scheduleConfig.storageId);
+        
+        if (databases.length > 0 && storage) {
+          schedules.push({
+            userId,
+            username,
+            config: {
+              frequency: scheduleConfig.frequency,
+              time: scheduleConfig.time,
+              weekday: scheduleConfig.weekday,
+              dayOfMonth: scheduleConfig.dayOfMonth,
+              retention: scheduleConfig.retention
+            },
+            databases,
+            storage: {
+              type: storage.type,
+              applicationKeyId: storage.applicationKeyId,
+              applicationKey: storage.applicationKey,
+              bucketName: storage.bucketName
+            }
+          });
+        }
+      }
+    }
+    
+    // 创建JSON格式的输出
+    const scheduleJson = JSON.stringify(schedules, null, 2);
+    
+    // 在生产环境中，这里应该将JSON写入到文件系统
+    // 对于Deno Deploy等无法写入文件系统的环境，需要考虑其他方式
+    
+    // 返回JSON
+    logInfo(`成功导出 ${schedules.length} 个计划备份配置`);
+    return c.json({
+      success: true,
+      schedules,
+      message: `成功导出 ${schedules.length} 个计划备份配置`
+    });
+  } catch (error) {
+    const errorMessage = `导出计划备份设置失败: ${error.message || '未知错误'}`;
+    logError(errorMessage, error);
+    
+    return c.json({
+      success: false,
+      message: errorMessage,
+      error: error.message || '未知错误'
+    }, 500);
+  }
+});

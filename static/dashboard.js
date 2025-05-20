@@ -1250,9 +1250,6 @@ function showScheduleBackupModal() {
                 scheduleFormData.append('time', scheduleTime);
                 scheduleFormData.append('retention', formData.get('retentionDays') || '30');
 
-                console.log('发送计划备份请求');
-                console.log('生成的Cron表达式:', cronExpression);
-                console.log('保留天数:', formData.get('retentionDays'));
                 console.log('选中的数据库IDs:', selectedDatabases);
                 console.log('存储ID:', storageId);
 
@@ -1262,20 +1259,78 @@ function showScheduleBackupModal() {
                     formDataParams.append(key, value);
                 }
                 
-                // 发送请求
-                const response = await fetch('/api/backup/schedule', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: formDataParams
-                });
-
-                console.log('计划备份请求响应状态:', response.status);
-                const data = await response.json();
-                console.log('计划备份请求响应数据:', data);
-
-                if (response.ok && data.success) {
+                // API端点列表 - 按优先级排序尝试
+                const scheduleApiEndpoints = [
+                    '/api/backup/schedule',
+                    '/api/schedule',
+                    '/api/schedule/backup'
+                ];
+                
+                let success = false;
+                let responseData = null;
+                let responseMessage = '';
+                
+                // 尝试所有端点直到成功
+                for (const endpoint of scheduleApiEndpoints) {
+                    try {
+                        console.log(`尝试提交到计划备份端点: ${endpoint}`);
+                        
+                        // 发送请求，添加超时处理
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+                        
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                'Pragma': 'no-cache',
+                                'Expires': '0'
+                            },
+                            body: formDataParams,
+                            signal: controller.signal
+                        });
+                        
+                        clearTimeout(timeoutId); // 清除超时
+                        
+                        console.log(`${endpoint} 响应状态码:`, response.status);
+                        
+                        // 检查HTTP状态码
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.warn(`端点 ${endpoint} 返回错误: ${response.status}, ${errorText}`);
+                            continue; // 尝试下一个端点
+                        }
+                        
+                        // 解析JSON响应
+                        const data = await response.json();
+                        console.log(`${endpoint} 响应数据:`, data);
+                        
+                        if (data.success) {
+                            // 成功！
+                            success = true;
+                            responseData = data;
+                            console.log(`计划备份设置成功保存到端点 ${endpoint}`);
+                            break; // 停止尝试其他端点
+                        } else {
+                            // API返回了成功状态码但success字段为false
+                            console.warn(`端点 ${endpoint} 返回成功状态码但数据不正确:`, data);
+                            responseMessage = data.message || '服务器返回未知错误';
+                        }
+                    } catch (endpointError) {
+                        console.warn(`请求端点 ${endpoint} 失败:`, endpointError.message);
+                        
+                        // 检查是否是超时错误
+                        if (endpointError.name === 'AbortError') {
+                            console.error(`端点 ${endpoint} 请求超时`);
+                            responseMessage = '请求超时，服务器响应时间过长';
+                        } else {
+                            responseMessage = endpointError.message || '连接服务器失败';
+                        }
+                    }
+                }
+                
+                if (success) {
                     // 成功，关闭模态框并刷新页面
                     console.log('计划备份设置成功');
                     if (document.body.contains(modal)) {
@@ -1284,9 +1339,9 @@ function showScheduleBackupModal() {
                     alert('计划备份已设置');
                     window.location.reload();
                 } else {
-                    // 失败，显示错误信息
-                    console.error('计划备份设置失败:', data);
-                    scheduleFormError.textContent = data.message || '操作失败，请稍后重试';
+                    // 所有端点尝试都失败
+                    console.error('所有API端点尝试失败，无法保存计划备份设置');
+                    scheduleFormError.textContent = responseMessage || '服务器连接失败，请稍后重试';
                     scheduleFormError.style.color = 'red';
                     if (submitButton) {
                         submitButton.disabled = false;
@@ -1315,27 +1370,83 @@ async function loadScheduleFormData() {
         try {
             console.log('开始加载计划备份表单数据');
             
-            // 首先加载用户已有的计划备份配置
-            console.log('请求已保存的计划备份设置');
-            const scheduleConfigResponse = await fetch('/api/backup/schedule');
-            
-            if (!scheduleConfigResponse.ok) {
-                console.error('获取计划备份设置失败:', scheduleConfigResponse.status);
-                throw new Error(`获取计划备份设置失败: ${scheduleConfigResponse.status}`);
-            }
-            
-            const scheduleConfigData = await scheduleConfigResponse.json();
-            console.log('已保存的计划备份设置响应:', scheduleConfigData);
+            // API端点列表 - 按优先级排序尝试
+            const scheduleApiEndpoints = [
+                '/api/backup/schedule',
+                '/api/schedule',
+                '/api/schedule/backup'
+            ];
             
             let savedConfig = null;
-            if (scheduleConfigData.success && scheduleConfigData.config) {
-                savedConfig = scheduleConfigData.config;
-                console.log('找到已保存的计划备份设置:', savedConfig);
+            let successfulEndpoint = null;
+            
+            // 尝试所有端点直到成功
+            for (const endpoint of scheduleApiEndpoints) {
+                try {
+                    // 首先加载用户已有的计划备份配置
+                    console.log(`尝试请求备份计划端点: ${endpoint}`);
+                    
+                    // 添加时间戳和禁用缓存的请求头
+                    const scheduleUrl = `${endpoint}?_t=${new Date().getTime()}`;
+                    
+                    const scheduleConfigResponse = await fetch(scheduleUrl, {
+                        method: 'GET', 
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        },
+                        // 短暂超时，以便快速尝试下一个端点
+                        timeout: 3000
+                    });
+                    
+                    // 检查响应状态码
+                    console.log(`${endpoint} 响应状态码: ${scheduleConfigResponse.status}`);
+                    
+                    if (!scheduleConfigResponse.ok) {
+                        console.warn(`端点 ${endpoint} 返回错误: ${scheduleConfigResponse.status}`);
+                        continue; // 尝试下一个端点
+                    }
+                    
+                    const scheduleConfigData = await scheduleConfigResponse.json();
+                    console.log(`${endpoint} 响应数据:`, scheduleConfigData);
+                    
+                    if (scheduleConfigData.success) {
+                        savedConfig = scheduleConfigData.config;
+                        successfulEndpoint = endpoint;
+                        console.log(`成功从 ${endpoint} 获取计划备份设置:`, savedConfig);
+                        break; // 成功获取配置，停止尝试其他端点
+                    } else {
+                        console.warn(`端点 ${endpoint} 返回成功状态码但数据不正确:`, scheduleConfigData);
+                    }
+                } catch (endpointError) {
+                    console.warn(`请求端点 ${endpoint} 失败:`, endpointError.message);
+                }
+            }
+            
+            if (!successfulEndpoint) {
+                console.error('所有API端点尝试失败，无法获取计划备份设置');
+            } else {
+                console.log(`使用成功的API端点: ${successfulEndpoint}`);
             }
 
             // 加载数据库列表
             console.log('请求数据库列表');
-            const dbResponse = await fetch('/api/databases');
+            const dbResponse = await fetch('/api/databases', {
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            });
+            
+            // 检查数据库响应状态
+            if (!dbResponse.ok) {
+                const errorText = await dbResponse.text();
+                console.error(`获取数据库列表失败: 状态码=${dbResponse.status}, 错误信息=${errorText}`);
+                throw new Error(`获取数据库列表失败: ${dbResponse.status}`);
+            }
+            
             const dbData = await dbResponse.json();
             console.log('数据库列表响应:', dbData);
 
@@ -1372,7 +1483,21 @@ async function loadScheduleFormData() {
 
             // 加载存储列表
             console.log('请求存储列表');
-            const storageResponse = await fetch('/api/storage');
+            const storageResponse = await fetch('/api/storage', {
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            });
+            
+            // 检查存储响应状态
+            if (!storageResponse.ok) {
+                const errorText = await storageResponse.text();
+                console.error(`获取存储列表失败: 状态码=${storageResponse.status}, 错误信息=${errorText}`);
+                throw new Error(`获取存储列表失败: ${storageResponse.status}`);
+            }
+            
             const storageData = await storageResponse.json();
             console.log('存储列表响应:', storageData);
 
@@ -1503,7 +1628,11 @@ async function loadScheduleFormData() {
 
             const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
             if (databaseCheckboxes) {
-                databaseCheckboxes.innerHTML = '<div class="error-message">加载数据失败</div>';
+                databaseCheckboxes.innerHTML = `<div class="error-message">
+                  <h4>加载数据失败</h4>
+                  <p>${error.message || '未知错误'}</p>
+                  <p>请检查网络连接或刷新页面重试</p>
+                </div>`;
             }
 
             reject(error);
