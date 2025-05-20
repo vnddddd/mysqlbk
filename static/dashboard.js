@@ -1201,20 +1201,49 @@ function showScheduleBackupModal() {
                         break;
                 }
 
-                // 准备发送的数据 - 使用FormData代替JSON
+                // 准备发送的数据 - 使用正确的字段名
                 const scheduleFormData = new FormData();
+                // 添加数据库ID
                 selectedDatabases.forEach(db => {
                     scheduleFormData.append('databases', db);
                 });
                 scheduleFormData.append('storageId', formData.get('storageId'));
-                scheduleFormData.append('cron', cronExpression);
-                scheduleFormData.append('retentionDays', formData.get('retentionDays') || '30');
+                
+                // 转换前端字段名为后端期望的字段名
+                // 将cron表达式拆分为frequency和time
+                let frequency = '';
+                let dayOfMonth = '';
+                let weekday = '';
+                
+                switch (scheduleType) {
+                    case 'daily':
+                        frequency = 'daily';
+                        break;
+                    case 'weekly':
+                        frequency = 'weekly';
+                        weekday = formData.get('scheduleWeekday') || '0';
+                        scheduleFormData.append('weekday', weekday);
+                        break;
+                    case 'monthly':
+                        frequency = 'monthly';
+                        dayOfMonth = formData.get('scheduleMonthDay') || '1';
+                        scheduleFormData.append('dayOfMonth', dayOfMonth);
+                        break;
+                    case 'custom':
+                        // 自定义cron表达式暂不支持，使用daily作为后备
+                        frequency = 'daily';
+                        break;
+                }
+                
+                scheduleFormData.append('frequency', frequency);
+                scheduleFormData.append('time', scheduleTime);
+                scheduleFormData.append('retention', formData.get('retentionDays') || '30');
 
                 console.log('发送计划备份请求');
                 console.log('生成的Cron表达式:', cronExpression);
                 console.log('保留天数:', formData.get('retentionDays'));
 
-                const response = await fetch('/api/schedule', {
+                const response = await fetch('/api/backup/schedule', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
