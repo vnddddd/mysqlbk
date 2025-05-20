@@ -1000,9 +1000,25 @@ function showBackupModal() {
 
                 // 将FormData转换为URL编码字符串
                 const formDataParams = new URLSearchParams();
+                
+                // 特殊处理数据库数组，使用逗号分隔的字符串传递
+                const databases = formData.getAll('databases');
+                if (databases && databases.length > 0) {
+                    console.log('立即备份 - 使用逗号分隔字符串传递数据库IDs:', databases);
+                    // 使用单个参数，逗号分隔
+                    formDataParams.append('databases', databases.join(','));
+                    // 移除原始的databases条目，防止重复
+                    formData.delete('databases');
+                }
+                
+                // 添加其他参数
                 for (const [key, value] of formData.entries()) {
+                    console.log(`立即备份 - 添加参数到URLSearchParams: ${key}=${value}`);
                     formDataParams.append(key, value);
                 }
+                
+                // 最终确认要发送的数据
+                console.log('立即备份 - 最终URLSearchParams:', formDataParams.toString());
 
                 // 使用统一的API请求函数提交表单
                 const result = await fetchWithEndpoints('backupStart', BACKUP_ENDPOINTS, {
@@ -1078,9 +1094,10 @@ async function loadBackupFormData() {
                     dbData.databases.forEach(db => {
                         const checkbox = document.createElement('div');
                         checkbox.className = 'checkbox-item';
+                        // 默认选中所有数据库
                         checkbox.innerHTML = `
                 <label>
-                  <input type="checkbox" name="databases" value="${db.id}">
+                  <input type="checkbox" name="databases" value="${db.id}" checked>
                   ${db.name} (${db.databases.join(', ')})
                 </label>
               `;
