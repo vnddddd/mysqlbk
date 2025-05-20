@@ -1201,25 +1201,25 @@ function showScheduleBackupModal() {
                         break;
                 }
 
-                // 准备发送的数据
-                const scheduleData = {
-                    databases: selectedDatabases,
-                    storageId: formData.get('storageId'),
-                    cron: cronExpression,
-                    retentionDays: parseInt(formData.get('retentionDays') || '30')
-                };
+                // 准备发送的数据 - 使用FormData代替JSON
+                const scheduleFormData = new FormData();
+                selectedDatabases.forEach(db => {
+                    scheduleFormData.append('databases', db);
+                });
+                scheduleFormData.append('storageId', formData.get('storageId'));
+                scheduleFormData.append('cron', cronExpression);
+                scheduleFormData.append('retentionDays', formData.get('retentionDays') || '30');
 
                 console.log('发送计划备份请求');
                 console.log('生成的Cron表达式:', cronExpression);
                 console.log('保留天数:', formData.get('retentionDays'));
-                console.log('即将发送的数据:', scheduleData);
 
                 const response = await fetch('/api/schedule', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: JSON.stringify(scheduleData)
+                    body: new URLSearchParams(scheduleFormData)
                 });
 
                 console.log('计划备份请求响应状态:', response.status);
