@@ -994,7 +994,6 @@ function showBackupModal() {
 
                 // 定义备份API端点
                 const BACKUP_ENDPOINTS = [
-                    '/api/backup/start',
                     '/api/backup',
                     '/api/start-backup'
                 ];
@@ -1052,8 +1051,8 @@ async function loadBackupFormData() {
             console.log('开始加载备份表单数据');
 
             // 定义API端点
-            const DB_ENDPOINTS = ['/api/databases', '/api/backup/databases'];
-            const STORAGE_ENDPOINTS = ['/api/storage', '/api/backup/storage'];
+            const DB_ENDPOINTS = ['/api/databases'];
+            const STORAGE_ENDPOINTS = ['/api/storage'];
 
             // 加载数据库列表
             console.log('请求数据库列表');
@@ -1425,7 +1424,6 @@ function showScheduleBackupModal() {
                 
                 // API端点定义
                 const SCHEDULE_ENDPOINTS = [
-                    '/api/backup/schedule',
                     '/api/schedule',
                     '/api/schedule/backup'
                 ];
@@ -1473,7 +1471,6 @@ async function loadScheduleFormData() {
             
             // API端点定义
             const SCHEDULE_ENDPOINTS = [
-                '/api/backup/schedule',
                 '/api/schedule',
                 '/api/schedule/backup'
             ];
