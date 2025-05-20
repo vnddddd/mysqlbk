@@ -1179,58 +1179,7 @@ async function showScheduleBackupModal() {
     }
   });
 
-  // 创建一个函数来设置表单值
-  const setFormValues = (form, values) => {
-    console.log('设置表单值:', values);
-
-    // 获取所有表单元素
-    const frequencySelect = form.querySelector('#backupFrequency');
-    const weekdayGroup = form.querySelector('#weekdayGroup');
-    const weekdaySelect = form.querySelector('#backupWeekday');
-    const dayOfMonthGroup = form.querySelector('#dayOfMonthGroup');
-    const dayOfMonthSelect = form.querySelector('#backupDayOfMonth');
-    const timeInput = form.querySelector('#backupTime');
-    const retentionInput = form.querySelector('#backupRetention');
-
-    // 设置频率
-    if (frequencySelect && values.frequency) {
-      frequencySelect.value = values.frequency;
-
-      // 根据频率显示/隐藏相关选项
-      if (values.frequency === 'weekly') {
-        if (weekdayGroup) weekdayGroup.style.display = 'block';
-        if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'none';
-      } else if (values.frequency === 'monthly') {
-        if (weekdayGroup) weekdayGroup.style.display = 'none';
-        if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
-      } else {
-        if (weekdayGroup) weekdayGroup.style.display = 'none';
-        if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'none';
-      }
-    }
-
-    // 设置星期几（如果适用）
-    if (values.frequency === 'weekly' && values.weekday !== undefined && weekdaySelect) {
-      weekdaySelect.value = String(values.weekday);
-    }
-
-    // 设置日期（如果适用）
-    if (values.frequency === 'monthly' && values.dayOfMonth !== undefined && dayOfMonthSelect) {
-      dayOfMonthSelect.value = String(values.dayOfMonth);
-    }
-
-    // 设置时间
-    if (timeInput && values.time) {
-      timeInput.value = values.time;
-    }
-
-    // 设置保留天数
-    if (retentionInput && values.retention !== undefined) {
-      retentionInput.value = values.retention;
-    }
-
-    console.log('表单值设置完成');
-  };
+  // 注意：这里不再使用setFormValues函数，直接在代码中设置表单值
 
   // 获取现有的计划备份设置
   try {
@@ -1250,42 +1199,88 @@ async function showScheduleBackupModal() {
     if (loadingIndicator) loadingIndicator.style.display = 'none';
     if (backupForm) backupForm.style.display = 'block';
 
-    // 设置表单值
+    // 为方便调试，记录服务器返回的数据和表单结构
+    console.log('服务器返回的配置数据:', data.config);
+    console.log('表单ID:', backupForm ? backupForm.id : '未找到');
+    console.log('表单内元素:', {
+      frequency: backupForm.querySelector('#backupFrequency') ? 'found' : 'missing',
+      time: backupForm.querySelector('#backupTime') ? 'found' : 'missing',
+      retention: backupForm.querySelector('#backupRetention') ? 'found' : 'missing'
+    });
+
+    // 准备要设置的表单值
+    let formValues;
     if (data.success && data.config) {
       // 使用服务器返回的配置
-      setFormValues(backupForm, data.config);
+      formValues = data.config;
+      // 保存配置到会话存储中，防止数据丢失
+      sessionStorage.setItem('backupScheduleConfig', JSON.stringify(formValues));
     } else {
-      // 使用默认值
-      setFormValues(backupForm, {
-        frequency: 'daily',
-        time: '03:00',
-        retention: 7
-      });
+      // 尝试从会话存储中获取之前的配置
+      const savedConfig = sessionStorage.getItem('backupScheduleConfig');
+      if (savedConfig) {
+        try {
+          formValues = JSON.parse(savedConfig);
+          console.log('从会话存储中恢复的配置:', formValues);
+        } catch (e) {
+          console.error('解析保存的配置失败:', e);
+          formValues = { frequency: 'daily', time: '03:00', retention: 7 };
+        }
+      } else {
+        // 使用默认值
+        formValues = { frequency: 'daily', time: '03:00', retention: 7 };
+      }
+    }
+    
+    console.log('设置表单值：', formValues);
+    
+    // 手动设置表单值
+    const frequencySelect = backupForm.querySelector('#backupFrequency');
+    const weekdayGroup = backupForm.querySelector('#weekdayGroup');
+    const weekdaySelect = backupForm.querySelector('#backupWeekday');
+    const dayOfMonthGroup = backupForm.querySelector('#dayOfMonthGroup');
+    const dayOfMonthSelect = backupForm.querySelector('#backupDayOfMonth');
+    const timeInput = backupForm.querySelector('#backupTime');
+    const retentionInput = backupForm.querySelector('#backupRetention');
+
+    // 设置频率
+    if (frequencySelect && formValues.frequency) {
+      frequencySelect.value = formValues.frequency;
     }
 
-    // 添加一个延迟验证，确保值被正确设置
-    setTimeout(() => {
-      const timeInput = backupForm.querySelector('#backupTime');
-      const retentionInput = backupForm.querySelector('#backupRetention');
+    // 设置时间
+    if (timeInput && formValues.time) {
+      timeInput.value = formValues.time;
+    }
 
-      console.log('验证表单值:');
-      console.log('- 时间:', timeInput ? timeInput.value : '未找到');
-      console.log('- 保留天数:', retentionInput ? retentionInput.value : '未找到');
+    // 设置保留天数
+    if (retentionInput && formValues.retention !== undefined) {
+      retentionInput.value = formValues.retention;
+    }
 
-      // 如果有配置但值没有正确设置，再次尝试设置
-      if (data.success && data.config) {
-        if (timeInput && data.config.time && timeInput.value !== data.config.time) {
-          console.log(`时间值不匹配，再次设置为: ${data.config.time}`);
-          timeInput.value = data.config.time;
-        }
-
-        if (retentionInput && data.config.retention !== undefined &&
-            parseInt(retentionInput.value || '0') !== data.config.retention) {
-          console.log(`保留天数值不匹配，再次设置为: ${data.config.retention}`);
-          retentionInput.value = data.config.retention;
-        }
+    // 根据频率显示/隐藏相关选项并设置值
+    if (formValues.frequency === 'weekly') {
+      if (weekdayGroup) weekdayGroup.style.display = 'block';
+      if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'none';
+      if (weekdaySelect && formValues.weekday !== undefined) {
+        weekdaySelect.value = String(formValues.weekday);
       }
-    }, 200);
+    } else if (formValues.frequency === 'monthly') {
+      if (weekdayGroup) weekdayGroup.style.display = 'none';
+      if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'block';
+      if (dayOfMonthSelect && formValues.dayOfMonth !== undefined) {
+        dayOfMonthSelect.value = String(formValues.dayOfMonth);
+      }
+    } else {
+      if (weekdayGroup) weekdayGroup.style.display = 'none';
+      if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'none';
+    }
+
+    // 检查表单设置情况
+    console.log('验证最终表单值:');
+    console.log('- 频率:', frequencySelect ? frequencySelect.value : '未找到');
+    console.log('- 时间:', timeInput ? timeInput.value : '未找到');
+    console.log('- 保留天数:', retentionInput ? retentionInput.value : '未找到');
   } catch (error) {
     console.error('获取计划备份设置失败:', error);
 
@@ -1298,11 +1293,24 @@ async function showScheduleBackupModal() {
       backupForm.style.display = 'block';
 
       // 使用默认值
-      setFormValues(backupForm, {
+      const defaultValues = {
         frequency: 'daily',
         time: '03:00',
         retention: 7
-      });
+      };
+      
+      // 手动设置默认值
+      const frequencySelect = backupForm.querySelector('#backupFrequency');
+      const weekdayGroup = backupForm.querySelector('#weekdayGroup');
+      const dayOfMonthGroup = backupForm.querySelector('#dayOfMonthGroup');
+      const timeInput = backupForm.querySelector('#backupTime');
+      const retentionInput = backupForm.querySelector('#backupRetention');
+      
+      if (frequencySelect) frequencySelect.value = defaultValues.frequency;
+      if (weekdayGroup) weekdayGroup.style.display = 'none';
+      if (dayOfMonthGroup) dayOfMonthGroup.style.display = 'none';
+      if (timeInput) timeInput.value = defaultValues.time;
+      if (retentionInput) retentionInput.value = defaultValues.retention;
     }
 
     if (errorElement) {
@@ -1344,6 +1352,13 @@ async function showScheduleBackupModal() {
       const timeInput = form.querySelector('#backupTime');
       const retentionInput = form.querySelector('#backupRetention');
       const scheduleFormError = document.getElementById('scheduleFormError');
+      
+      console.log('当前表单控件元素:');
+      console.log('- 频率选择器:', frequencySelect ? frequencySelect.id : '未找到');
+      console.log('- 星期几选择器:', weekdaySelect ? weekdaySelect.id : '未找到');
+      console.log('- 日期选择器:', dayOfMonthSelect ? dayOfMonthSelect.id : '未找到');
+      console.log('- 时间输入:', timeInput ? timeInput.id : '未找到');
+      console.log('- 保留天数输入:', retentionInput ? retentionInput.id : '未找到');
 
       if (scheduleFormError) {
         scheduleFormError.textContent = ''; // 清除之前的错误信息
@@ -1411,6 +1426,17 @@ async function showScheduleBackupModal() {
 
         if (response.ok && data.success) {
           console.log('保存成功，配置:', data.config);
+          
+          // 将成功保存的配置存储到会话存储中
+          if (data.config) {
+            try {
+              sessionStorage.setItem('backupScheduleConfig', JSON.stringify(data.config));
+              console.log('配置已保存到会话存储:', data.config);
+            } catch (e) {
+              console.error('保存配置到会话存储失败:', e);
+            }
+          }
+          
           alert('计划备份设置已保存');
 
           // 安全地移除模态框
