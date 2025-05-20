@@ -639,22 +639,18 @@ a:hover {
   height: 100%;
   background-color: rgba(0, 0, 0, 0.5);
   overflow-y: auto;
-  /* u589eu52a0u4e00u4e2au5ef6u8fdfu6765u9632u6b62u5916u90e8u70b9u51fb */
-  pointer-events: all;
 }
 
 .modal-content {
   background-color: #fff;
-  margin: 3% auto; /* 减少顶部间距 */
-  padding: 25px; /* 增加内边距 */
-  border-radius: 12px; /* 增加圆角半径 */
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); /* 增强阴影效果 */
-  width: 95%; /* 增加总体宽度 */
-  max-width: 600px; /* 增加最大宽度 */
-  max-height: 92vh; /* 让内容区域更大 */
+  margin: 5% auto;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
   overflow-y: auto;
-  position: relative; /* 添加相对定位 */
-  z-index: 1001; /* 确保内容区域在模态框上层 */
 }
 
 .modal-header {
@@ -759,53 +755,6 @@ a:hover {
   to { opacity: 1; }
 }
 
-/* 添加双击确认关闭的提示样式 */
-.modal-close-confirm {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 10px 20px;
-  border-radius: 4px;
-  z-index: 2000;
-  animation: fadeIn 0.3s ease;
-  text-align: center;
-  font-size: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-/* 修改模态框外部的点击区域，增加安全边距 */
-.modal::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: -1;
-  /* 不捕获点击事件，使点击通过到实际的外部区域 */
-  pointer-events: none;
-}
-
-/* 添加模态框内容的边缘效果 */
-.modal-header {
-  margin: -25px -25px 15px -25px; /* 根据内容的padding调整 */
-  padding: 20px 25px;
-  background-color: #f8f8f8;
-  border-radius: 12px 12px 0 0;
-}
-
-/* 增加模态框内容区域的大小，减少误操作的可能性 */
-.modal-content {
-  /* 已经存在的样式保持不变 */
-  /* 增加安全边距，防止误点击关闭 */
-  padding: 30px;
-  border: 1px solid #e1e1e1;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-}
-
 /* 响应式设计 */
 @media (max-width: 768px) {
   .dashboard-content {
@@ -863,19 +812,5 @@ a:hover {
   .modal-content {
     width: 95%;
     margin: 10% auto;
-  }
-  
-  /* 增加更大的安全边距防止误触 */
-  .modal-content {
-    padding: 30px 35px !important;
-    max-width: 650px !important;
-    border-radius: 16px !important;
-    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4) !important;
-  }
-  
-  /* 添加确认触发效果 */
-  .modal-footer {
-    padding-top: 15px !important;
-    margin-top: 20px !important;
   }
 }
