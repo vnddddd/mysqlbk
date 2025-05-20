@@ -1029,13 +1029,49 @@ function showScheduleBackupModal() {
           </div>
           <div class="form-group">
             <label for="scheduleCron">备份计划</label>
-            <select id="scheduleCron" name="cron" class="form-select" required>
-              <option value="0 0 * * *">每天 - 午夜 00:00</option>
-              <option value="0 12 * * *">每天 - 中午 12:00</option>
-              <option value="0 0 * * 0">每周 - 周日 00:00</option>
-              <option value="0 0 1 * *">每月 - 1日 00:00</option>
-              <option value="0 0 1,15 * *">每月两次 - 1日和15日 00:00</option>
+            <select id="scheduleCron" name="scheduleType" class="form-select" required>
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+              <option value="custom">自定义</option>
             </select>
+          </div>
+          
+          <div id="scheduleTimeWrapper" class="form-group">
+            <label for="scheduleTime">备份时间</label>
+            <input type="time" id="scheduleTime" name="scheduleTime" value="00:00" class="form-input" required>
+          </div>
+          
+          <div id="weekdayWrapper" class="form-group" style="display: none;">
+            <label for="scheduleWeekday">星期几</label>
+            <select id="scheduleWeekday" name="scheduleWeekday" class="form-select">
+              <option value="0">星期日</option>
+              <option value="1">星期一</option>
+              <option value="2">星期二</option>
+              <option value="3">星期三</option>
+              <option value="4">星期四</option>
+              <option value="5">星期五</option>
+              <option value="6">星期六</option>
+            </select>
+          </div>
+          
+          <div id="monthDayWrapper" class="form-group" style="display: none;">
+            <label for="scheduleMonthDay">日期</label>
+            <select id="scheduleMonthDay" name="scheduleMonthDay" class="form-select">
+              ${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">${i + 1}日</option>`).join('')}
+            </select>
+          </div>
+          
+          <div id="customCronWrapper" class="form-group" style="display: none;">
+            <label for="customCron">自定义Cron表达式</label>
+            <input type="text" id="customCron" name="customCron" placeholder="例如: 0 0 * * *" class="form-input">
+            <div class="form-hint">格式: 分 时 日 月 星期</div>
+          </div>
+          
+          <div class="form-group">
+            <label for="retentionDays">保留天数</label>
+            <input type="number" id="retentionDays" name="retentionDays" value="30" min="1" max="365" class="form-input" required>
+            <div class="form-hint">超过指定天数的备份将被自动删除（本地和云端）</div>
           </div>
           <div class="form-error" id="scheduleFormError"></div>
         </form>
@@ -1063,6 +1099,37 @@ function showScheduleBackupModal() {
 
     // 点击模态框外部关闭 - 添加确认机制防止误操作
     setupModalCloseConfirmation(modal);
+
+    // 初始化计划备份选择器
+    const scheduleTypeSelector = document.getElementById('scheduleCron');
+    const weekdayWrapper = document.getElementById('weekdayWrapper');
+    const monthDayWrapper = document.getElementById('monthDayWrapper');
+    const customCronWrapper = document.getElementById('customCronWrapper');
+
+    if (scheduleTypeSelector) {
+        scheduleTypeSelector.addEventListener('change', function () {
+            // 隐藏所有相关包装器
+            weekdayWrapper.style.display = 'none';
+            monthDayWrapper.style.display = 'none';
+            customCronWrapper.style.display = 'none';
+
+            // 根据选择显示相应元素
+            switch (this.value) {
+                case 'weekly':
+                    weekdayWrapper.style.display = 'block';
+                    break;
+                case 'monthly':
+                    monthDayWrapper.style.display = 'block';
+                    break;
+                case 'custom':
+                    customCronWrapper.style.display = 'block';
+                    break;
+            }
+        });
+
+        // 触发一次change事件以设置初始状态
+        scheduleTypeSelector.dispatchEvent(new Event('change'));
+    }
 
     // 加载数据库和存储列表
     loadScheduleFormData().then(() => {
@@ -1115,7 +1182,37 @@ function showScheduleBackupModal() {
                     submitButton.textContent = '保存中...';
                 }
 
+                // 生成cron表达式
+                const scheduleType = formData.get('scheduleType');
+                const scheduleTime = formData.get('scheduleTime');
+                const [hour, minute] = scheduleTime.split(':');
+
+                let cronExpression = '';
+
+                switch (scheduleType) {
+                    case 'daily':
+                        cronExpression = `${minute} ${hour} * * *`;
+                        break;
+                    case 'weekly':
+                        const weekday = formData.get('scheduleWeekday');
+                        cronExpression = `${minute} ${hour} * * ${weekday}`;
+                        break;
+                    case 'monthly':
+                        const monthDay = formData.get('scheduleMonthDay');
+                        cronExpression = `${minute} ${hour} ${monthDay} * *`;
+                        break;
+                    case 'custom':
+                        cronExpression = formData.get('customCron');
+                        break;
+                }
+
+                // 添加cron表达式到表单数据
+                formData.append('cron', cronExpression);
+
                 console.log('发送计划备份请求');
+                console.log('生成的Cron表达式:', cronExpression);
+                console.log('保留天数:', formData.get('retentionDays'));
+
                 const response = await fetch('/api/schedule', {
                     method: 'POST',
                     headers: {
