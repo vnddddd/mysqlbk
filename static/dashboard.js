@@ -1339,10 +1339,23 @@ function showScheduleBackupModal() {
 
             // 获取选中的数据库
             const selectedDatabases = [];
-            document.querySelectorAll('input[name="scheduleDatabases"]:checked').forEach(checkbox => {
+            // 确保获取所有选中的数据库复选框
+            const checkedBoxes = document.querySelectorAll('input[name="scheduleDatabases"]:checked');
+            console.log('找到选中的数据库复选框数量:', checkedBoxes.length);
+            
+            checkedBoxes.forEach(checkbox => {
+                console.log('处理选中的数据库:', checkbox.value, checkbox.checked);
                 selectedDatabases.push(checkbox.value);
             });
+            
+            // 获取所有可见的checkbox进行检查
+            const allBoxes = document.querySelectorAll('input[name="scheduleDatabases"]');
+            console.log('所有数据库复选框数量:', allBoxes.length);
+            allBoxes.forEach((box, index) => {
+                console.log(`数据库复选框[${index}]:`, box.value, '是否选中:', box.checked);
+            });
 
+            console.log('最终选中的数据库列表:', selectedDatabases);
             if (selectedDatabases.length === 0) {
                 scheduleFormError.textContent = '请至少选择一个数据库';
                 scheduleFormError.style.color = 'red';
@@ -1364,9 +1377,14 @@ function showScheduleBackupModal() {
                 const scheduleFormData = new FormData();
                 
                 // 添加数据库ID列表
-                selectedDatabases.forEach(db => {
+                console.log('准备添加以下数据库到表单:', selectedDatabases);
+                selectedDatabases.forEach((db, index) => {
+                    console.log(`添加数据库[${index}]:`, db);
                     scheduleFormData.append('databases', db);
                 });
+                
+                // 检查FormData中的数据库列表
+                console.log('FormData中的databases字段:', scheduleFormData.getAll('databases'));
                 
                 // 添加存储ID
                 const storageId = formData.get('storageId');
@@ -1419,8 +1437,12 @@ function showScheduleBackupModal() {
                 // 将FormData转换为URL编码字符串
                 const formDataParams = new URLSearchParams();
                 for (const [key, value] of scheduleFormData.entries()) {
+                    console.log(`添加参数到URLSearchParams: ${key}=${value}`);
                     formDataParams.append(key, value);
                 }
+                
+                // 最终确认要发送的数据
+                console.log('最终URLSearchParams:', formDataParams.toString());
                 
                 // API端点定义
                 const SCHEDULE_ENDPOINTS = [
@@ -1522,8 +1544,8 @@ async function loadScheduleFormData() {
                     dbData.databases.forEach(db => {
                         const checkbox = document.createElement('div');
                         checkbox.className = 'checkbox-item';
-                        // 如果数据库ID在已保存列表中，则选中它
-                        const isChecked = savedDatabaseIds.includes(db.id) ? 'checked' : '';
+                        // 如果有已保存配置，则只选中保存的数据库；否则默认全选
+                        const isChecked = savedConfig ? (savedDatabaseIds.includes(db.id) ? 'checked' : '') : 'checked';
                         checkbox.innerHTML = `
                 <label>
                   <input type="checkbox" name="scheduleDatabases" value="${db.id}" ${isChecked}>
