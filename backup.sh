@@ -252,8 +252,8 @@ for DB in "${DBS[@]}"; do
     # 执行备份，设置超时处理
     TIMEOUT_CMD=""
     if command -v timeout &> /dev/null; then
-        TIMEOUT_CMD="timeout 3600"  # 1小时超时
-        log_debug "使用timeout命令限制备份时间为1小时"
+        TIMEOUT_CMD="timeout 1800"  # 30分钟超时，降低单表超时时间
+        log_debug "使用timeout命令限制备份时间为30分钟"
     fi
     
     # 尝试使用mysql_native_password认证执行备份
@@ -274,7 +274,7 @@ for DB in "${DBS[@]}"; do
     
     # 检查是否因超时而失败
     if [ $DUMP_STATUS -eq 124 ]; then
-        log_error "备份数据库 $DB 失败: 操作超时(1小时)"
+        log_error "备份数据库 $DB 失败: 操作超时(30分钟)"
         FAILED=1
         continue
     fi

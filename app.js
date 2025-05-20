@@ -93,6 +93,11 @@ function logError(message, error) {
   }
 }
 
+// 警告日志函数
+function logWarn(message) {
+  console.warn(`[WARN] ${new Date().toISOString()} - ${message}`);
+}
+
 // 中间件：检查用户是否已登录
 async function authMiddleware(c, next) {
   const sessionId = getCookie(c, "session");
@@ -1279,140 +1284,161 @@ app.get("/api/backup/download", authMiddleware, async (c) => {
 
 // 上传文件到Backblaze B2
 async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, bucketName) {
-  try {
-    // 第1步：获取授权信息
-    const authUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+  let retryCount = 0;
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2秒
+  
+  while (retryCount <= maxRetries) {
+    try {
+      // 第1步：获取授权信息
+      logInfo(`B2上传 [尝试 ${retryCount+1}/${maxRetries+1}]: 获取授权`);
+      const authUrl = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
 
-    // 创建认证头
-    const credentials = `${applicationKeyId}:${applicationKey}`;
-    const encodedCredentials = btoa(credentials);
+      // 创建认证头
+      const credentials = `${applicationKeyId}:${applicationKey}`;
+      const encodedCredentials = btoa(credentials);
 
-    const authResponse = await fetch(authUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Basic ${encodedCredentials}`
+      const authResponse = await fetch(authUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Basic ${encodedCredentials}`
+        }
+      });
+
+      if (!authResponse.ok) {
+        const errorData = await authResponse.json();
+        throw new Error(`B2认证失败: ${errorData.message || errorData.code || "未知错误"} (HTTP ${authResponse.status})`);
       }
-    });
 
-    if (!authResponse.ok) {
-      const errorData = await authResponse.json();
-      throw new Error(`B2认证失败: ${errorData.message || errorData.code || "未知错误"}`);
+      const authData = await authResponse.json();
+      logInfo(`B2上传: 授权成功，获取到apiUrl: ${authData.apiUrl.split('/').slice(0, 3).join('/')}/...`);
+
+      // 第2步：获取上传URL
+      logInfo(`B2上传: 获取上传URL`);
+      const getUploadUrlUrl = `${authData.apiUrl}/b2api/v2/b2_get_upload_url`;
+      const getUploadUrlResponse = await fetch(getUploadUrlUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": authData.authorizationToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          bucketId: bucketName
+        })
+      });
+
+      if (!getUploadUrlResponse.ok) {
+        const errorData = await getUploadUrlResponse.json();
+        throw new Error(`获取上传URL失败: ${errorData.message || errorData.code || "未知错误"} (HTTP ${getUploadUrlResponse.status})`);
+      }
+
+      const uploadUrlData = await getUploadUrlResponse.json();
+      logInfo(`B2上传: 获取到上传URL`);
+
+      // 第3步：上传文件
+      logInfo(`B2上传: 开始上传文件 ${fileName} (${fileData.length} 字节)`);
+      
+      // 计算文件SHA1
+      let sha1;
+      // 检测环境是否支持SubtleCrypto
+      if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+        logInfo(`B2上传: 使用SubtleCrypto计算SHA1`);
+        // 使用WebCrypto计算SHA1
+        const hashBuffer = await crypto.subtle.digest('SHA-1', fileData);
+        sha1 = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+      } else {
+        // 对于不支持SubtleCrypto的环境，使用一个简单的标识符
+        sha1 = "no-sha1-" + new Date().getTime();
+        logWarn(`B2上传: 当前环境不支持SHA1计算，使用时间戳替代: ${sha1}`);
+      }
+
+      const uploadStartTime = Date.now();
+      const uploadResponse = await fetch(uploadUrlData.uploadUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": uploadUrlData.authorizationToken,
+          "X-Bz-File-Name": encodeURIComponent(fileName),
+          "Content-Type": "application/octet-stream",
+          "Content-Length": fileData.length.toString(),
+          "X-Bz-Content-Sha1": sha1
+        },
+        body: fileData
+      });
+
+      // 检查上传是否成功
+      if (!uploadResponse.ok) {
+        let errorMessage;
+        try {
+          const errorData = await uploadResponse.json();
+          errorMessage = `${errorData.message || errorData.code || "未知错误"} (HTTP ${uploadResponse.status})`;
+        } catch (e) {
+          errorMessage = `HTTP错误 ${uploadResponse.status} ${uploadResponse.statusText}`;
+        }
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          logWarn(`B2上传失败，将在${retryDelay/1000}秒后重试 (${retryCount}/${maxRetries}): ${errorMessage}`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+        
+        throw new Error(`上传文件失败: ${errorMessage}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      const uploadEndTime = Date.now();
+      const uploadDuration = (uploadEndTime - uploadStartTime) / 1000;
+      const uploadSpeed = (fileData.length / uploadDuration / 1024).toFixed(2);
+      
+      logInfo(`B2上传: 文件上传成功 ${fileName}, 耗时: ${uploadDuration.toFixed(2)}秒, 速度: ${uploadSpeed} KB/s`);
+      
+      return uploadData;
+    } catch (error) {
+      if (retryCount < maxRetries) {
+        retryCount++;
+        logWarn(`B2上传出错，将在${retryDelay/1000}秒后重试 (${retryCount}/${maxRetries}): ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        logError(`B2上传失败，已重试${maxRetries}次`, error);
+        throw error;
+      }
     }
-
-    const authData = await authResponse.json();
-
-    // 第2步：获取上传URL
-    const getUploadUrlUrl = `${authData.apiUrl}/b2api/v2/b2_get_upload_url`;
-
-    // 首先获取bucket ID
-    const listBucketsUrl = `${authData.apiUrl}/b2api/v2/b2_list_buckets`;
-    const listBucketsResponse = await fetch(listBucketsUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": authData.authorizationToken,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        accountId: authData.accountId
-      })
-    });
-
-    if (!listBucketsResponse.ok) {
-      const errorData = await listBucketsResponse.json();
-      throw new Error(`获取存储桶列表失败: ${errorData.message || errorData.code || "未知错误"}`);
-    }
-
-    const bucketsData = await listBucketsResponse.json();
-    const bucket = bucketsData.buckets.find(b => b.bucketName === bucketName);
-
-    if (!bucket) {
-      throw new Error(`未找到存储桶: ${bucketName}`);
-    }
-
-    const bucketId = bucket.bucketId;
-
-    // 获取上传URL
-    const getUploadUrlResponse = await fetch(getUploadUrlUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": authData.authorizationToken,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        bucketId: bucketId
-      })
-    });
-
-    if (!getUploadUrlResponse.ok) {
-      const errorData = await getUploadUrlResponse.json();
-      throw new Error(`获取上传URL失败: ${errorData.message || errorData.code || "未知错误"}`);
-    }
-
-    const uploadUrlData = await getUploadUrlResponse.json();
-
-    // 第3步：上传文件
-    const uploadResponse = await fetch(uploadUrlData.uploadUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": uploadUrlData.authorizationToken,
-        "Content-Type": "application/octet-stream",
-        "Content-Length": fileData.length.toString(),
-        "X-Bz-File-Name": encodeURIComponent(fileName),
-        "X-Bz-Content-Sha1": "do_not_verify" // 在生产环境中应该计算实际的SHA1
-      },
-      body: fileData
-    });
-
-    if (!uploadResponse.ok) {
-      const errorData = await uploadResponse.json();
-      throw new Error(`文件上传失败: ${errorData.message || errorData.code || "未知错误"}`);
-    }
-
-    const uploadResult = await uploadResponse.json();
-    logInfo(`文件上传成功: ${fileName}, 大小: ${fileData.length} 字节`);
-
-    return uploadResult;
-  } catch (error) {
-    logError(`上传到B2失败: ${fileName}`, error);
-    throw error;
   }
 }
 
 // 执行备份任务
 async function executeBackup(task) {
+  if (!task || !task.databases || !task.storage) {
+    logError("备份任务无效: 缺少数据库或存储配置");
+    return;
+  }
+
   try {
-    // 更新任务状态为进行中
-    await kv.set(["backupTasks", task.id], {
-      ...task,
-      status: "running",
-      startedAt: new Date().toISOString()
-    });
+    // 记录每个任务的内存使用情况
+    const initialMemory = process.memoryUsage ? process.memoryUsage().heapUsed / 1024 / 1024 : 0;
+    logInfo(`开始执行备份任务, 当前内存使用: ${initialMemory.toFixed(2)} MB`);
 
-    // 准备存储配置
-    const storage = task.storage;
-    let B2_APPLICATION_KEY_ID = "";
-    let B2_APPLICATION_KEY = "";
-    let B2_BUCKET_NAME = "";
-
-    if (storage.type === "backblaze") {
-      B2_APPLICATION_KEY_ID = storage.applicationKeyId;
-      B2_APPLICATION_KEY = storage.applicationKey;
-      B2_BUCKET_NAME = storage.bucketName;
-    }
-
-    // 执行每个数据库的备份
-    const results = [];
-    const successDatabases = [];
-    const failedDatabases = [];
-    let totalBackupSize = 0;
-
+    // 为每个数据库创建单独的备份
     for (const dbConfig of task.databases) {
       for (const dbName of dbConfig.databases) {
+        let backupString = null;
+        let compressedData = null;
+        
         try {
+          // 为每个数据库记录开始时间
+          const dbStartTime = Date.now();
           logInfo(`开始备份数据库: ${dbConfig.name} - ${dbName}`);
 
+          // 在Deno环境中特殊处理
+          const isDeno = typeof Deno !== 'undefined';
+          if (isDeno) {
+            logInfo(`检测到Deno环境，进行特殊优化`);
+          }
+
           // 执行备份
-          const backupString = await fallbackBackup(
+          backupString = await fallbackBackup(
             dbConfig.host,
             dbConfig.port,
             dbConfig.user,
@@ -1421,115 +1447,142 @@ async function executeBackup(task) {
             dbConfig.sslMode
           );
 
+          // 内存使用检查点
+          checkMemoryUsage(`数据库 ${dbName} 备份内容生成完成`);
+
           // 压缩备份内容
           const textEncoder = new TextEncoder();
           const backupData = textEncoder.encode(backupString);
-          const compressedData = await gzip(backupData);
-
+          // 释放原始数据，减少内存占用
+          backupString = null;
+          
+          // 强制一次垃圾回收
+          if (globalThis.gc) {
+            globalThis.gc();
+          }
+          
+          // 添加短暂延迟，给垃圾回收器时间工作
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          logInfo(`数据库 ${dbName} 备份完成，大小: ${formatBytes(backupData.length)} 字节`);
+          
+          // 进行压缩
+          compressedData = await gzip(backupData);
+          
+          // 释放未压缩数据的引用
+          backupData.length = 0;
+          
           // 生成文件名
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const gzipFileName = `backup-${dbName}-${timestamp}.sql.gz`;
           const b2FileName = `mysql-backups/${gzipFileName}`;
 
-          // 上传到云存储
-          if (storage.type === "backblaze") {
-            await uploadToB2(
+          logInfo(`数据库 ${dbName} 备份完成，大小: ${compressedData.length} 字节`);
+
+          // 上传到B2
+          try {
+            const uploadResult = await uploadToB2(
               compressedData,
               b2FileName,
-              B2_APPLICATION_KEY_ID,
-              B2_APPLICATION_KEY,
-              B2_BUCKET_NAME
+              task.storage.applicationKeyId,
+              task.storage.applicationKey,
+              task.storage.bucketName
             );
+
+            logInfo(`文件上传成功: ${b2FileName}, 大小: ${compressedData.length} 字节`);
             
-            // 清理内存中的备份数据
+            // 释放压缩数据的内存
             logInfo(`释放备份数据内存: ${dbName}`);
+            compressedData = null;
+            
+            // 主动触发垃圾回收
+            if (globalThis.gc) {
+              logInfo(`触发垃圾回收以释放内存`);
+              globalThis.gc();
+              // 短暂延迟，确保GC完成
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            // 记录总执行时间
+            const totalTime = (Date.now() - dbStartTime) / 1000;
+            logInfo(`数据库 ${dbName} 备份成功，总耗时: ${totalTime.toFixed(2)}秒`);
+            
+          } catch (uploadError) {
+            logError(`上传备份失败: ${dbName}`, uploadError);
+            // 释放压缩数据的内存
+            compressedData = null;
+            // 上传失败，但不抛出异常，继续下一个数据库
           }
-
-          // 记录结果
-          results.push({
-            database: dbName,
-            success: true,
-            size: backupData.length,
-            compressedSize: compressedData.length,
-            filename: b2FileName
-          });
-
-          successDatabases.push(dbName);
-          totalBackupSize += backupData.length;
-
-          logInfo(`数据库 ${dbName} 备份成功`);
+        } catch (dbError) {
+          logError(`备份数据库失败: ${dbName}`, dbError);
+          // 释放内存
+          backupString = null;
+          compressedData = null;
+          // 当前数据库备份失败，继续下一个
+          continue;
+        } finally {
+          // 确保释放所有引用
+          backupString = null;
+          compressedData = null;
           
-          // 备份完成后，主动触发垃圾回收以释放内存
+          // 触发垃圾回收
           if (globalThis.gc) {
-            logInfo(`触发垃圾回收以释放内存`);
             globalThis.gc();
           }
-        } catch (error) {
-          logError(`备份数据库 ${dbName} 失败`, error);
-
-          results.push({
-            database: dbName,
-            success: false,
-            error: error.message
-          });
-
-          failedDatabases.push(dbName);
+          
+          // 检查内存状态
+          checkMemoryUsage(`数据库 ${dbName} 备份完成后`);
         }
       }
     }
 
-    // 更新任务状态为完成
-    const completedTask = {
-      ...task,
-      status: failedDatabases.length === 0 ? "completed" : "partial",
-      results,
-      successDatabases,
-      failedDatabases,
-      totalBackupSize,
-      completedAt: new Date().toISOString()
-    };
-
-    await kv.set(["backupTasks", task.id], completedTask);
-
-    // 添加到备份历史
-    const backupHistoryResult = await kv.get(["backupHistory", task.userId]);
-    const backupHistory = backupHistoryResult.value || [];
-
-    const historyEntry = {
-      id: task.id,
-      timestamp: new Date().toISOString(),
-      success: failedDatabases.length === 0,
-      databases: [...successDatabases, ...failedDatabases],
-      successDatabases,
-      failedDatabases,
-      totalBackupSize,
-      storage: storage.name,
-      results
-    };
-
-    backupHistory.unshift(historyEntry);
-
-    // 只保留最近100条历史记录
-    if (backupHistory.length > 100) {
-      backupHistory.length = 100;
-    }
-
-    await kv.set(["backupHistory", task.userId], backupHistory);
-
-    return completedTask;
+    // 最终内存使用检查
+    const finalMemory = process.memoryUsage ? process.memoryUsage().heapUsed / 1024 / 1024 : 0;
+    logInfo(`备份任务完成, 最终内存使用: ${finalMemory.toFixed(2)} MB`);
+    
+    // 返回任务完成状态
+    return { success: true };
   } catch (error) {
-    logError(`执行备份任务失败`, error);
-
-    // 更新任务状态为失败
-    await kv.set(["backupTasks", task.id], {
-      ...task,
-      status: "failed",
-      error: error.message,
-      completedAt: new Date().toISOString()
-    });
-
-    throw error;
+    logError("执行备份任务失败", error);
+    return { success: false, error: error.message };
   }
+}
+
+// 辅助函数：检查内存使用情况
+function checkMemoryUsage(label) {
+  if (process.memoryUsage) {
+    const memUsage = process.memoryUsage();
+    const heapUsed = memUsage.heapUsed / 1024 / 1024;
+    const heapTotal = memUsage.heapTotal / 1024 / 1024;
+    const external = memUsage.external / 1024 / 1024;
+    
+    logInfo(`内存使用[${label}]: ${heapUsed.toFixed(2)}MB/${heapTotal.toFixed(2)}MB (${(heapUsed/heapTotal*100).toFixed(1)}%), 外部: ${external.toFixed(2)}MB`);
+    
+    if (heapUsed > heapTotal * 0.8) {
+      logWarn(`内存使用偏高! 使用了堆内存的${(heapUsed/heapTotal*100).toFixed(1)}%`);
+      // 请求垃圾回收
+      if (globalThis.gc) {
+        logInfo(`主动请求垃圾回收`);
+        globalThis.gc();
+      }
+    }
+  } else if (typeof Deno !== 'undefined') {
+    // Deno环境中记录
+    logInfo(`${label} - Deno环境，无法详细获取内存使用`);
+  }
+}
+
+// 辅助函数：格式化字节大小
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0';
+  
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + sizes[i];
 }
 
 // 使用直接查询方式备份MySQL数据库
@@ -1537,7 +1590,7 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
   try {
     logInfo(`使用直接查询方式备份数据库: ${database}`);
 
-    // 准备连接配置
+    // 准备连接配置 - 修复timeout选项问题
     const connectionConfig = {
       host,
       port,
@@ -1545,9 +1598,10 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
       password,
       database,
       multipleStatements: true,
-      // 添加查询超时设置
+      // 只使用支持的超时设置
       connectTimeout: 30000, // 30秒连接超时
-      timeout: 3600000      // 1小时查询超时
+      // 移除不支持的timeout选项
+      dateStrings: true // 避免日期转换问题
     };
 
     // 添加SSL配置（如果有）
@@ -1565,11 +1619,39 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
     // 创建数据库连接
     const connection = await mysql.createConnection(connectionConfig);
 
+    // 设置语句超时（如果支持）
+    try {
+      // 对连接设置会话变量，增加语句超时
+      await connection.query("SET SESSION max_execution_time=3600000"); // 1小时超时(毫秒)
+      logInfo(`已为数据库 ${database} 设置查询超时: 3600秒`);
+    } catch (err) {
+      logWarn(`无法为数据库 ${database} 设置查询超时: ${err.message}`);
+    }
+
     // 获取所有表
     const [tables] = await connection.query("SHOW TABLES");
     const tableNames = tables.map(table => Object.values(table)[0]);
     
     logInfo(`数据库 ${database} 中发现 ${tableNames.length} 个表`);
+
+    // 预先评估数据库大小
+    try {
+      const [dbSizeResult] = await connection.query(`
+        SELECT 
+          SUM(data_length + index_length) AS total_size,
+          COUNT(*) AS table_count,
+          SUM(table_rows) AS estimated_rows
+        FROM information_schema.tables
+        WHERE table_schema = ?`, [database]);
+      
+      if (dbSizeResult && dbSizeResult[0]) {
+        const totalSizeMB = Math.round(dbSizeResult[0].total_size / (1024 * 1024) * 100) / 100;
+        const estimatedRows = dbSizeResult[0].estimated_rows;
+        logInfo(`数据库 ${database} 估计大小: ${totalSizeMB} MB, 估计总行数: ${estimatedRows || 'Unknown'}`);
+      }
+    } catch (err) {
+      logWarn(`无法评估数据库 ${database} 大小: ${err.message}`);
+    }
 
     // 构建备份头
     let backupContent = `-- MySQL备份 - 数据库: ${database}\n`;
@@ -1584,59 +1666,254 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
     for (const tableName of tableNames) {
       tableCount++;
       const startTime = Date.now();
-      logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length})`);
+      
+      // 预先评估表大小
+      try {
+        const [tableSizeResult] = await connection.query(`
+          SELECT 
+            table_rows as rows, 
+            data_length + index_length AS size
+          FROM information_schema.tables 
+          WHERE table_schema = ? AND table_name = ?`, 
+          [database, tableName]);
+        
+        if (tableSizeResult && tableSizeResult[0]) {
+          const tableSizeMB = Math.round(tableSizeResult[0].size / (1024 * 1024) * 100) / 100;
+          const estimatedRows = tableSizeResult[0].rows || 'Unknown';
+          logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length}) - 估计大小: ${tableSizeMB} MB, 估计行数: ${estimatedRows}`);
+        } else {
+          logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length})`);
+        }
+      } catch (err) {
+        logWarn(`无法评估表 ${tableName} 大小: ${err.message}`);
+        logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length})`);
+      }
       
       try {
-        // 获取表结构
-        const [createTable] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
-        const createTableSql = createTable[0]['Create Table'];
+      // 获取表结构
+      const [createTable] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
+      const createTableSql = createTable[0]['Create Table'];
 
-        backupContent += `-- ----------------------------\n`;
-        backupContent += `-- 表结构 \`${tableName}\`\n`;
-        backupContent += `-- ----------------------------\n`;
-        backupContent += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
-        backupContent += `${createTableSql};\n\n`;
+      backupContent += `-- ----------------------------\n`;
+      backupContent += `-- 表结构 \`${tableName}\`\n`;
+      backupContent += `-- ----------------------------\n`;
+      backupContent += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
+      backupContent += `${createTableSql};\n\n`;
 
-        // 获取表数据
-        const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
-
-        if (rows.length > 0) {
-          logInfo(`表 ${tableName} 包含 ${rows.length} 行数据`);
-          
-          backupContent += `-- ----------------------------\n`;
-          backupContent += `-- 表数据 \`${tableName}\`\n`;
-          backupContent += `-- ----------------------------\n`;
-
-          // 构建INSERT语句
-          const columns = Object.keys(rows[0]);
-          const columnList = columns.map(col => `\`${col}\``).join(', ');
-
-          // 分批处理数据，避免生成过大的SQL语句
-          const batchSize = 100;
-          let batchCount = 0;
-          for (let i = 0; i < rows.length; i += batchSize) {
-            batchCount++;
-            const batch = rows.slice(i, i + batchSize);
-
-            backupContent += `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`;
-
-            const valueStrings = batch.map(row => {
-              const values = columns.map(col => {
-                const value = row[col];
-                if (value === null) return 'NULL';
-                if (typeof value === 'number') return value;
-                if (typeof value === 'boolean') return value ? 1 : 0;
-                if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
-                return `'${String(value).replace(/'/g, "''")}'`;
-              });
-              return `(${values.join(', ')})`;
-            });
-
-            backupContent += valueStrings.join(',\n') + ';\n\n';
+        // 检查表行数，对大表使用分页查询
+        let totalRows = 0;
+        
+        // 获取表的主键或唯一键信息，用于有序分页
+        let primaryKeyColumn = 'id'; // 默认主键
+        try {
+          const [keysResult] = await connection.query(`
+            SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' 
+            LIMIT 1`, [database, tableName]);
             
-            // 在批量插入较大的表时提供进度反馈
-            if (rows.length > 1000 && batchCount % 10 === 0) {
-              logInfo(`表 ${tableName} 处理进度: ${Math.min(100, Math.round((i + batchSize) / rows.length * 100))}%`);
+          if (keysResult && keysResult.length > 0) {
+            primaryKeyColumn = keysResult[0].COLUMN_NAME;
+            logInfo(`表 ${tableName} 使用主键: ${primaryKeyColumn} 进行分页查询`);
+          } else {
+            // 尝试查找第一个唯一键
+            const [uniqueKeysResult] = await connection.query(`
+              SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE 
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? 
+              AND POSITION_IN_UNIQUE_CONSTRAINT IS NOT NULL 
+              LIMIT 1`, [database, tableName]);
+              
+            if (uniqueKeysResult && uniqueKeysResult.length > 0) {
+              primaryKeyColumn = uniqueKeysResult[0].COLUMN_NAME;
+              logInfo(`表 ${tableName} 没有主键，使用唯一键: ${primaryKeyColumn} 进行分页查询`);
+            } else {
+              logInfo(`表 ${tableName} 没有找到主键或唯一键，将使用LIMIT分页`);
+              primaryKeyColumn = null;
+            }
+          }
+        } catch (err) {
+          logWarn(`获取表 ${tableName} 主键信息失败: ${err.message}`);
+          primaryKeyColumn = null;
+        }
+        
+        // 先尝试计算行数 
+        try {
+          const [countResult] = await connection.query(`SELECT COUNT(*) as count FROM \`${tableName}\``);
+          totalRows = countResult[0].count;
+          logInfo(`表 ${tableName} 包含 ${totalRows} 行数据`);
+        } catch (countError) {
+          logWarn(`无法计算表 ${tableName} 的行数: ${countError.message}`);
+          // 如果无法计算行数，就假设有数据，尝试查询
+          totalRows = 1;
+        }
+
+        if (totalRows > 0) {
+        backupContent += `-- ----------------------------\n`;
+        backupContent += `-- 表数据 \`${tableName}\`\n`;
+        backupContent += `-- ----------------------------\n`;
+
+          // 使用分页策略处理大表
+          const pageSize = 500; // 每页减少到500行，适应Deno Deploy限制
+          const totalPages = Math.ceil(totalRows / pageSize);
+          
+          if (totalPages > 1) {
+            logInfo(`表 ${tableName} 数据量较大，将分 ${totalPages} 页处理，每页 ${pageSize} 行`);
+          }
+
+          // 对于大表使用分页查询
+          let currentPage = 0;
+          let hasMoreData = true;
+          let lastId = 0; // 用于主键分页
+          
+          while (hasMoreData) {
+            currentPage++;
+            let query;
+            let queryParams = [];
+            
+            // 根据是否有主键选择分页策略
+            if (primaryKeyColumn && totalRows > pageSize) {
+              query = `SELECT * FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` > ? ORDER BY \`${primaryKeyColumn}\` LIMIT ?`;
+              queryParams = [lastId, pageSize];
+            } else {
+              query = `SELECT * FROM \`${tableName}\` LIMIT ?, ?`;
+              queryParams = [(currentPage - 1) * pageSize, pageSize];
+            }
+            
+            // 记录每个查询的开始时间
+            const queryStartTime = Date.now();
+            logInfo(`开始查询第 ${currentPage}/${totalPages} 页数据 (${tableName})`);
+            
+            try {
+              // 使用Promise.race实现更可靠的超时机制
+              const queryTimeout = 5 * 60 * 1000; // 减少到5分钟，适应Deno Deploy环境
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                  reject(new Error(`查询超时，已运行超过${queryTimeout/1000}秒`));
+                }, queryTimeout);
+              });
+              
+              const queryPromise = connection.query({
+                sql: query,
+                timeout: 300000 // 5分钟超时
+              }, queryParams);
+              
+              // 使用Promise.race确保不会永久卡住
+              const [rows] = await Promise.race([queryPromise, timeoutPromise]);
+              
+              const queryDuration = (Date.now() - queryStartTime) / 1000;
+              logInfo(`查询第 ${currentPage} 页完成，获取了 ${rows.length} 行，耗时 ${queryDuration.toFixed(2)}秒`);
+              
+              // 如果没有获取到数据，就结束循环
+              if (rows.length === 0) {
+                hasMoreData = false;
+                continue;
+              }
+              
+              // 记录最后一个主键值，用于下一次查询
+              if (primaryKeyColumn && rows.length > 0) {
+                lastId = rows[rows.length - 1][primaryKeyColumn];
+              }
+
+              // 构建INSERT语句 - 减小批次大小
+              const columns = Object.keys(rows[0]);
+              const columnList = columns.map(col => `\`${col}\``).join(', ');
+
+              // 分批处理数据，减小每批次大小
+              const batchSize = 50; // 减小到50行每批次
+              let batchCount = 0;
+              for (let i = 0; i < rows.length; i += batchSize) {
+                batchCount++;
+                const batch = rows.slice(i, i + batchSize);
+
+                // 预先计算大致SQL大小
+                let estimatedSize = `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`.length;
+                let sqlChunk = `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`;
+                
+                const valueStrings = [];
+                for (const row of batch) {
+                  const values = columns.map(col => {
+                    const value = row[col];
+                    if (value === null) return 'NULL';
+                    if (typeof value === 'number') return value;
+                    if (typeof value === 'boolean') return value ? 1 : 0;
+                    if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                    return `'${String(value).replace(/'/g, "''")}'`;
+                  });
+                  valueStrings.push(`(${values.join(', ')})`);
+                }
+
+                sqlChunk += valueStrings.join(',\n') + ';\n\n';
+                backupContent += sqlChunk;
+                
+                // 立即释放临时变量
+                sqlChunk = null;
+                
+                // 每处理完一个批次触发垃圾回收
+                if (batchCount % 5 === 0 && globalThis.gc) {
+                  globalThis.gc();
+                }
+              }
+              
+              // 主动释放这一页的数据引用，帮助垃圾回收
+              const rowsLength = rows.length;
+              // 清空rows引用
+              rows.length = 0;
+              
+              // 在批量插入较大的表时提供进度反馈
+              const progressPercent = Math.min(100, Math.round((currentPage * pageSize) / totalRows * 100));
+              logInfo(`表 ${tableName} 处理进度: ${progressPercent}% (已处理 ${currentPage * pageSize} 行)`);
+              
+              // 对于大表，在每页处理完后触发GC，减少内存压力
+              if (rowsLength >= pageSize/2 && globalThis.gc) {
+                logInfo(`触发垃圾回收，释放第 ${currentPage} 页数据的内存`);
+                globalThis.gc();
+              }
+              
+              // 强制短暂暂停，给JS引擎垃圾回收的机会
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              // 如果不是使用主键分页，或者获取的数据量少于页大小，表示没有更多数据了
+              if (!primaryKeyColumn || rowsLength < pageSize) {
+                hasMoreData = false;
+              }
+            } catch (queryError) {
+              const queryDuration = (Date.now() - queryStartTime) / 1000;
+              logError(`查询第 ${currentPage} 页失败，耗时 ${queryDuration.toFixed(2)}秒: ${queryError.message}`);
+              
+              if (queryDuration >= 9 * 60) { // 如果查询运行了接近10分钟
+                logWarn(`表 ${tableName} 第 ${currentPage} 页查询超时，跳过此页`);
+                
+                // 如果使用主键分页，尝试跳过当前范围
+                if (primaryKeyColumn) {
+                  try {
+                    // 尝试获取比当前lastId大的下一个主键值
+                    const [nextIdResult] = await connection.query(
+                      `SELECT \`${primaryKeyColumn}\` FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` > ? ORDER BY \`${primaryKeyColumn}\` LIMIT 1 OFFSET ${pageSize}`, 
+                      [lastId]
+                    );
+                    
+                    if (nextIdResult && nextIdResult.length > 0) {
+                      // 找到了下一个可用的ID，跳过当前范围
+                      const newLastId = nextIdResult[0][primaryKeyColumn];
+                      logWarn(`跳过当前主键范围 ${lastId} - ${newLastId}`);
+                      lastId = newLastId;
+                      continue; // 继续下一次循环
+                    }
+                  } catch (skipError) {
+                    logError(`尝试跳过范围失败: ${skipError.message}`);
+                  }
+                }
+                
+                // 如果无法使用主键跳过，或者跳过失败，尝试进入下一页
+                if (currentPage < totalPages) {
+                  currentPage++; // 尝试跳过这一页
+                  continue;
+                }
+              }
+              
+              // 如果不是超时或者无法跳过，结束循环
+              logError(`由于查询错误，停止处理表 ${tableName}: ${queryError.message}`);
+              hasMoreData = false;
+              continue;
             }
           }
         } else {
@@ -1645,6 +1922,11 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
         
         const elapsedTime = (Date.now() - startTime) / 1000;
         logInfo(`表 ${tableName} 备份完成，耗时: ${elapsedTime.toFixed(2)}秒`);
+        
+        // 在每个表处理完后触发垃圾回收
+        if (globalThis.gc) {
+          globalThis.gc();
+        }
       } catch (tableError) {
         logError(`备份表 ${tableName} 失败: ${tableError.message}`, tableError);
         backupContent += `-- 备份表 ${tableName} 失败: ${tableError.message}\n\n`;

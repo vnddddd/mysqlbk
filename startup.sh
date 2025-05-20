@@ -278,6 +278,10 @@ start_health_check_server() {
 main() {
     log_info "MySQL 备份服务启动中..."
     
+    # 设置Node.js内存限制
+    export NODE_OPTIONS="--max-old-space-size=4096 --expose-gc"
+    log_info "设置Node.js内存上限为4GB，启用垃圾回收器"
+    
     # 确保必要的目录存在
     ensure_directories
     
