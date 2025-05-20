@@ -1437,13 +1437,12 @@ function showScheduleBackupModal() {
                 // 将FormData转换为URL编码字符串
                 const formDataParams = new URLSearchParams();
                 
-                // 特殊处理数据库数组，确保使用databases[]格式传递
+                // 特殊处理数据库数组，尝试使用逗号分隔的字符串传递
                 const databases = scheduleFormData.getAll('databases');
                 if (databases && databases.length > 0) {
-                    console.log('使用数组格式传递数据库IDs:', databases);
-                    databases.forEach(dbId => {
-                        formDataParams.append('databases[]', dbId);
-                    });
+                    console.log('使用逗号分隔字符串传递数据库IDs:', databases);
+                    // 使用单个参数，逗号分隔
+                    formDataParams.append('databases', databases.join(','));
                     // 移除原始的databases条目，防止重复
                     scheduleFormData.delete('databases');
                 }
