@@ -843,10 +843,10 @@ function showBackupModal() {
                 const submitButton = form.querySelector('button[type="submit"]');
                 if (submitButton) {
                     submitButton.disabled = true;
-                    submitButton.textContent = 'u5907u4efdu4e2d...';
+                    submitButton.textContent = '备份中...';
                 }
 
-                console.log('u53d1u9001u5907u4efdu8bf7u6c42');
+                console.log('发送备份请求');
                 const response = await fetch('/api/backup', {
                     method: 'POST',
                     headers: {
@@ -855,36 +855,36 @@ function showBackupModal() {
                     body: new URLSearchParams(formData)
                 });
 
-                console.log('u5907u4efdu8bf7u6c42u54cdu5e94u72b6u6001:', response.status);
+                console.log('备份请求响应状态:', response.status);
                 const data = await response.json();
-                console.log('u5907u4efdu8bf7u6c42u54cdu5e94u6570u636e:', data);
+                console.log('备份请求响应数据:', data);
 
                 if (response.ok && data.success) {
-                    // u6210u529fuff0cu5173u95edu6a21u6001u6846u5e76u5237u65b0u9875u9762
-                    console.log('u5907u4efdu4efbu52a1u63d0u4ea4u6210u529f');
+                    // 成功，关闭模态框并刷新页面
+                    console.log('备份任务提交成功');
                     if (document.body.contains(modal)) {
                         document.body.removeChild(modal);
                     }
-                    alert('u5907u4efdu4efbu52a1u5df2u63d0u4ea4uff0cu8bf7u5728u5907u4efdu5386u53f2u4e2du67e5u770bu7ed3u679c');
+                    alert('备份任务已提交，请在备份历史中查看结果');
                     window.location.reload();
                 } else {
-                    // u5931u8d25uff0cu663eu793au9519u8befu4fe1u606f
-                    console.error('u5907u4efdu4efbu52a1u63d0u4ea4u5931u8d25:', data);
-                    backupFormError.textContent = data.message || 'u64cdu4f5cu5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5';
+                    // 失败，显示错误信息
+                    console.error('备份任务提交失败:', data);
+                    backupFormError.textContent = data.message || '操作失败，请稍后重试';
                     backupFormError.style.color = 'red';
                     if (submitButton) {
                         submitButton.disabled = false;
-                        submitButton.textContent = 'u5f00u59cbu5907u4efd';
+                        submitButton.textContent = '开始备份';
                     }
                 }
             } catch (error) {
-                console.error('u5907u4efdu8bf7u6c42u5931u8d25:', error);
-                backupFormError.textContent = `u8bf7u6c42u5931u8d25: ${error.message || 'u672au77e5u9519u8bef'}`;
+                console.error('备份请求失败:', error);
+                backupFormError.textContent = `请求失败: ${error.message || '未知错误'}`;
                 backupFormError.style.color = 'red';
                 const submitButton = form.querySelector('button[type="submit"]');
                 if (submitButton) {
                     submitButton.disabled = false;
-                    submitButton.textContent = 'u5f00u59cbu5907u4efd';
+                    submitButton.textContent = '开始备份';
                 }
             }
         });
@@ -927,34 +927,34 @@ async function loadBackupFormData() {
                     databaseCheckboxes.appendChild(checkbox);
                 });
             } else {
-                databaseCheckboxes.innerHTML = '<div class="empty-message">u6ca1u6709u53efu7528u7684u6570u636eu5e93u914du7f6e</div>';
+                databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
             }
 
-            // u52a0u8f7du5b58u50a8u5217u8868
-            console.log('u8bf7u6c42u5b58u50a8u5217u8868');
+            // 加载存储列表
+            console.log('请求存储列表');
             const storageResponse = await fetch('/api/storage');
             const storageData = await storageResponse.json();
-            console.log('u5b58u50a8u5217u8868u54cdu5e94:', storageData);
+            console.log('存储列表响应:', storageData);
 
             const storageSelect = document.getElementById('backupStorage');
             if (!storageSelect) {
-                console.error('u672au627eu5230u5b58u50a8u9009u62e9u5668u5143u7d20');
-                reject(new Error('DOMu5143u7d20u672au627eu5230: backupStorage'));
+                console.error('未找到存储选择器元素');
+                reject(new Error('DOM元素未找到: backupStorage'));
                 return;
             }
 
-            // u6e05u7a7au73b0u6709u9009u9879
+            // 清空现有选项
             storageSelect.innerHTML = '';
 
             if (storageData.success && storageData.storage && storageData.storage.length > 0) {
-                // u6dfbu52a0u9ed8u8ba4u9009u9879
+                // 添加默认选项
                 const defaultOption = document.createElement('option');
                 defaultOption.value = '';
-                defaultOption.textContent = '-- u9009u62e9u5b58u50a8 --';
+                defaultOption.textContent = '-- 选择存储 --';
                 defaultOption.disabled = true;
                 storageSelect.appendChild(defaultOption);
 
-                // u6dfbu52a0u5b58u50a8u9009u9879
+                // 添加存储选项
                 storageData.storage.forEach(storage => {
                     const option = document.createElement('option');
                     option.value = storage.id;
@@ -967,20 +967,20 @@ async function loadBackupFormData() {
             } else {
                 const option = document.createElement('option');
                 option.value = '';
-                option.textContent = 'u6ca1u6709u53efu7528u7684u5b58u50a8u914du7f6e';
+                option.textContent = '没有可用的存储配置';
                 option.disabled = true;
                 option.selected = true;
                 storageSelect.appendChild(option);
             }
 
-            console.log('u5907u4efdu8868u5355u6570u636eu52a0u8f7du5b8cu6210');
+            console.log('备份表单数据加载完成');
             resolve();
         } catch (error) {
-            console.error('u52a0u8f7du5907u4efdu8868u5355u6570u636eu5931u8d25:', error);
+            console.error('加载备份表单数据失败:', error);
 
             const databaseCheckboxes = document.getElementById('databaseCheckboxes');
             if (databaseCheckboxes) {
-                databaseCheckboxes.innerHTML = '<div class="error-message">u52a0u8f7du6570u636eu5931u8d25</div>';
+                databaseCheckboxes.innerHTML = '<div class="error-message">加载数据失败</div>';
             }
 
             reject(error);
@@ -1260,22 +1260,22 @@ function showScheduleBackupModal() {
     }
 }
 
-// u52a0u8f7du8ba1u5212u5907u4efdu8868u5355u6570u636e
+// 加载计划备份表单数据
 async function loadScheduleFormData() {
     return new Promise(async (resolve, reject) => {
         try {
-            console.log('u5f00u59cbu52a0u8f7du8ba1u5212u5907u4efdu8868u5355u6570u636e');
+            console.log('开始加载计划备份表单数据');
 
-            // u52a0u8f7du6570u636eu5e93u5217u8868
-            console.log('u8bf7u6c42u6570u636eu5e93u5217u8868');
+            // 加载数据库列表
+            console.log('请求数据库列表');
             const dbResponse = await fetch('/api/databases');
             const dbData = await dbResponse.json();
-            console.log('u6570u636eu5e93u5217u8868u54cdu5e94:', dbData);
+            console.log('数据库列表响应:', dbData);
 
             const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
             if (!databaseCheckboxes) {
-                console.error('u672au627eu5230u6570u636eu5e93u590du9009u6846u5bb9u5668u5143u7d20');
-                reject(new Error('DOMu5143u7d20u672au627eu5230: scheduleDatabaseCheckboxes'));
+                console.error('未找到数据库复选框容器元素');
+                reject(new Error('DOM元素未找到: scheduleDatabaseCheckboxes'));
                 return;
             }
 
@@ -1294,34 +1294,34 @@ async function loadScheduleFormData() {
                     databaseCheckboxes.appendChild(checkbox);
                 });
             } else {
-                databaseCheckboxes.innerHTML = '<div class="empty-message">u6ca1u6709u53efu7528u7684u6570u636eu5e93u914du7f6e</div>';
+                databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
             }
 
-            // u52a0u8f7du5b58u50a8u5217u8868
-            console.log('u8bf7u6c42u5b58u50a8u5217u8868');
+            // 加载存储列表
+            console.log('请求存储列表');
             const storageResponse = await fetch('/api/storage');
             const storageData = await storageResponse.json();
-            console.log('u5b58u50a8u5217u8868u54cdu5e94:', storageData);
+            console.log('存储列表响应:', storageData);
 
             const storageSelect = document.getElementById('scheduleStorage');
             if (!storageSelect) {
-                console.error('u672au627eu5230u5b58u50a8u9009u62e9u5668u5143u7d20');
-                reject(new Error('DOMu5143u7d20u672au627eu5230: scheduleStorage'));
+                console.error('未找到存储选择器元素');
+                reject(new Error('DOM元素未找到: scheduleStorage'));
                 return;
             }
 
-            // u6e05u7a7au73b0u6709u9009u9879
+            // 清空现有选项
             storageSelect.innerHTML = '';
 
             if (storageData.success && storageData.storage && storageData.storage.length > 0) {
-                // u6dfbu52a0u9ed8u8ba4u9009u9879
+                // 添加默认选项
                 const defaultOption = document.createElement('option');
                 defaultOption.value = '';
-                defaultOption.textContent = '-- u9009u62e9u5b58u50a8 --';
+                defaultOption.textContent = '-- 选择存储 --';
                 defaultOption.disabled = true;
                 storageSelect.appendChild(defaultOption);
 
-                // u6dfbu52a0u5b58u50a8u9009u9879
+                // 添加存储选项
                 storageData.storage.forEach(storage => {
                     const option = document.createElement('option');
                     option.value = storage.id;
@@ -1334,20 +1334,20 @@ async function loadScheduleFormData() {
             } else {
                 const option = document.createElement('option');
                 option.value = '';
-                option.textContent = 'u6ca1u6709u53efu7528u7684u5b58u50a8u914du7f6e';
+                option.textContent = '没有可用的存储配置';
                 option.disabled = true;
                 option.selected = true;
                 storageSelect.appendChild(option);
             }
 
-            console.log('u8ba1u5212u5907u4efdu8868u5355u6570u636eu52a0u8f7du5b8cu6210');
+            console.log('计划备份表单数据加载完成');
             resolve();
         } catch (error) {
-            console.error('u52a0u8f7du8ba1u5212u5907u4efdu8868u5355u6570u636eu5931u8d25:', error);
+            console.error('加载计划备份表单数据失败:', error);
 
             const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
             if (databaseCheckboxes) {
-                databaseCheckboxes.innerHTML = '<div class="error-message">u52a0u8f7du6570u636eu5931u8d25</div>';
+                databaseCheckboxes.innerHTML = '<div class="error-message">加载数据失败</div>';
             }
 
             reject(error);
