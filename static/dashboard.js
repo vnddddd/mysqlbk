@@ -1294,6 +1294,18 @@ async function loadScheduleFormData() {
     return new Promise(async (resolve, reject) => {
         try {
             console.log('开始加载计划备份表单数据');
+            
+            // 首先加载用户已有的计划备份配置
+            console.log('请求已保存的计划备份设置');
+            const scheduleConfigResponse = await fetch('/api/backup/schedule');
+            const scheduleConfigData = await scheduleConfigResponse.json();
+            console.log('已保存的计划备份设置响应:', scheduleConfigData);
+            
+            let savedConfig = null;
+            if (scheduleConfigData.success && scheduleConfigData.config) {
+                savedConfig = scheduleConfigData.config;
+                console.log('找到已保存的计划备份设置:', savedConfig);
+            }
 
             // 加载数据库列表
             console.log('请求数据库列表');
@@ -1310,13 +1322,18 @@ async function loadScheduleFormData() {
 
             databaseCheckboxes.innerHTML = '';
 
+            // 如果有已保存的数据库列表，获取它们的ID
+            const savedDatabaseIds = savedConfig?.databases || [];
+
             if (dbData.success && dbData.databases && dbData.databases.length > 0) {
                 dbData.databases.forEach(db => {
                     const checkbox = document.createElement('div');
                     checkbox.className = 'checkbox-item';
+                    // 如果数据库ID在已保存列表中，则选中它
+                    const isChecked = savedDatabaseIds.includes(db.id) ? 'checked' : '';
                     checkbox.innerHTML = `
             <label>
-              <input type="checkbox" name="scheduleDatabases" value="${db.id}">
+              <input type="checkbox" name="scheduleDatabases" value="${db.id}" ${isChecked}>
               ${db.name} (${db.databases.join(', ')})
             </label>
           `;
@@ -1355,9 +1372,13 @@ async function loadScheduleFormData() {
                     const option = document.createElement('option');
                     option.value = storage.id;
                     option.textContent = storage.name;
-                    if (storage.active) {
+                    
+                    // 如果有已保存的存储ID，使用它；否则使用活跃的存储
+                    if ((savedConfig && storage.id === savedConfig.storageId) || 
+                        (!savedConfig && storage.active)) {
                         option.selected = true;
                     }
+                    
                     storageSelect.appendChild(option);
                 });
             } else {
@@ -1367,6 +1388,59 @@ async function loadScheduleFormData() {
                 option.disabled = true;
                 option.selected = true;
                 storageSelect.appendChild(option);
+            }
+            
+            // 如果有保存的配置，设置其他表单字段
+            if (savedConfig) {
+                // 设置备份频率
+                const scheduleTypeSelect = document.getElementById('scheduleCron');
+                if (scheduleTypeSelect) {
+                    let scheduleType = 'daily'; // 默认日常
+                    
+                    switch (savedConfig.frequency) {
+                        case 'daily':
+                            scheduleType = 'daily';
+                            break;
+                        case 'weekly':
+                            scheduleType = 'weekly';
+                            break;
+                        case 'monthly':
+                            scheduleType = 'monthly';
+                            break;
+                    }
+                    
+                    scheduleTypeSelect.value = scheduleType;
+                    // 触发change事件以显示相应的子选项
+                    scheduleTypeSelect.dispatchEvent(new Event('change'));
+                }
+                
+                // 设置备份时间
+                const scheduleTimeInput = document.getElementById('scheduleTime');
+                if (scheduleTimeInput && savedConfig.time) {
+                    scheduleTimeInput.value = savedConfig.time;
+                }
+                
+                // 设置星期几（如果是每周备份）
+                if (savedConfig.frequency === 'weekly' && savedConfig.weekday !== undefined) {
+                    const weekdaySelect = document.getElementById('scheduleWeekday');
+                    if (weekdaySelect) {
+                        weekdaySelect.value = savedConfig.weekday.toString();
+                    }
+                }
+                
+                // 设置日期（如果是每月备份）
+                if (savedConfig.frequency === 'monthly' && savedConfig.dayOfMonth !== undefined) {
+                    const monthDaySelect = document.getElementById('scheduleMonthDay');
+                    if (monthDaySelect) {
+                        monthDaySelect.value = savedConfig.dayOfMonth.toString();
+                    }
+                }
+                
+                // 设置保留天数
+                const retentionInput = document.getElementById('retentionDays');
+                if (retentionInput && savedConfig.retention) {
+                    retentionInput.value = savedConfig.retention.toString();
+                }
             }
 
             console.log('计划备份表单数据加载完成');
