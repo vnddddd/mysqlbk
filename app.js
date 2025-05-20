@@ -1089,11 +1089,29 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
 
   // 记录请求内容（不包含敏感信息）
   logInfo(`收到计划备份设置请求: 用户=${user.username}, 频率=${body.frequency}, 时间=${body.time}, 保留天数=${body.retention}`);
+  
+  // 处理数据库ID数组 - 支持数组或单个字符串
+  let databases = [];
+  if (body.databases) {
+    if (Array.isArray(body.databases)) {
+      databases = body.databases;
+    } else if (typeof body.databases === 'string') {
+      databases = [body.databases];
+    }
+  }
+  
+  logInfo(`选择的数据库IDs: ${JSON.stringify(databases)}`);
 
   // 验证输入
   if (!body.frequency || !body.time || !body.retention) {
     logError(`计划备份设置验证失败: 缺少必要字段`);
     return c.json({ success: false, message: "缺少必要的字段" }, 400);
+  }
+  
+  // 验证至少选择了一个数据库
+  if (databases.length === 0) {
+    logError(`计划备份设置验证失败: 未选择数据库`);
+    return c.json({ success: false, message: "请选择至少一个数据库" }, 400);
   }
 
   // 根据频率验证其他字段
@@ -1112,6 +1130,8 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
     frequency: body.frequency,
     time: body.time,
     retention: parseInt(body.retention),
+    storageId: body.storageId,
+    databases: databases,
     updatedAt: new Date().toISOString(),
     userId: user.id
   };
@@ -1128,6 +1148,8 @@ app.post("/api/backup/schedule", authMiddleware, async (c) => {
     频率: ${scheduleConfig.frequency}
     时间: ${scheduleConfig.time}
     保留天数: ${scheduleConfig.retention}
+    存储ID: ${scheduleConfig.storageId}
+    数据库IDs: ${JSON.stringify(scheduleConfig.databases)}
     星期几: ${scheduleConfig.weekday || '不适用'}
     日期: ${scheduleConfig.dayOfMonth || '不适用'}
     用户ID: ${scheduleConfig.userId}

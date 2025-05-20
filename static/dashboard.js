@@ -1,4 +1,4 @@
-// u4eeau8868u677fu9875u9762u811au672c
+// 仪表板页面脚本
 
 // 模态框点击外部区域关闭确认函数 - 防止误操作
 function setupModalCloseConfirmation(modal) {
@@ -49,7 +49,7 @@ function setupModalCloseConfirmation(modal) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // u5bfcu822au83dcu5355u5207u6362
+    // 导航菜单切换
     const navLinks = document.querySelectorAll('.dashboard-nav a');
     const sections = document.querySelectorAll('.dashboard-section');
 
@@ -57,68 +57,68 @@ document.addEventListener('DOMContentLoaded', () => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
 
-            // u83b7u53d6u76eeu6807u90e8u5206u7684ID
+            // 获取目标部分的ID
             const targetId = link.getAttribute('href').substring(1);
 
-            // u79fbu9664u6240u6709u6d3bu52a8u7c7b
+            // 移除所有活动类
             navLinks.forEach(l => l.classList.remove('active'));
             sections.forEach(s => s.classList.remove('active'));
 
-            // u6dfbu52a0u6d3bu52a8u7c7bu5230u5f53u524du94feu63a5u548cu76eeu6807u90e8u5206
+            // 添加活动类到当前链接和目标部分
             link.classList.add('active');
             document.getElementById(targetId).classList.add('active');
         });
     });
 
-    // u7acbu5373u5907u4efdu6309u94ae
+    // 立即备份按钮
     const backupNowBtn = document.getElementById('manualBackupBtn');
     if (backupNowBtn) {
-        // u79fbu9664u6240u6709u73b0u6709u7684u4e8bu4ef6u76d1u542cu5668
+        // 移除所有现有的事件监听器
         const newBackupBtn = backupNowBtn.cloneNode(true);
         backupNowBtn.parentNode.replaceChild(newBackupBtn, backupNowBtn);
 
-        // u6dfbu52a0u65b0u7684u4e8bu4ef6u76d1u542cu5668
+        // 添加新的事件监听器
         newBackupBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
-            // u9632u6b62u91cdu590du70b9u51fb
+            // 防止重复点击
             if (document.querySelector('.modal')) {
-                console.log('u5df2u6709u6a21u6001u6846u6253u5f00uff0cu5ffdu7565u70b9u51fb');
+                console.log('已有模态框打开，忽略点击');
                 return;
             }
 
-            console.log('u6253u5f00u7acbu5373u5907u4efdu6a21u6001u6846');
+            console.log('打开立即备份模态框');
             showBackupModal();
         });
     }
 
-    // u8ba1u5212u5907u4efdu6309u94ae
+    // 计划备份按钮
     const scheduleBackupBtn = document.getElementById('scheduleBackupBtn');
     if (scheduleBackupBtn) {
-        // u79fbu9664u6240u6709u73b0u6709u7684u4e8bu4ef6u76d1u542cu5668
+        // 移除所有现有的事件监听器
         const newScheduleBtn = scheduleBackupBtn.cloneNode(true);
         scheduleBackupBtn.parentNode.replaceChild(newScheduleBtn, scheduleBackupBtn);
 
-        // u6dfbu52a0u65b0u7684u4e8bu4ef6u76d1u542cu5668
+        // 添加新的事件监听器
         newScheduleBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
-            // u9632u6b62u91cdu590du70b9u51fb
+            // 防止重复点击
             if (document.querySelector('.modal')) {
-                console.log('u5df2u6709u6a21u6001u6846u6253u5f00uff0cu5ffdu7565u70b9u51fb');
+                console.log('已有模态框打开，忽略点击');
                 return;
             }
 
-            console.log('u6253u5f00u8ba1u5212u5907u4efdu6a21u6001u6846');
+            console.log('打开计划备份模态框');
             showScheduleBackupModal();
         });
     }
 
-    // u5907u4efdu5386u53f2u64cdu4f5c
+    // 查看备份详情和下载备份
     document.addEventListener('click', (e) => {
-        // u67e5u770bu5907u4efdu8be6u60c5
+        // 查看备份详情
         if (e.target.closest('.view-details')) {
             const historyRow = e.target.closest('.history-row');
             const timestamp = historyRow.querySelector('.history-cell:nth-child(2)').textContent;
@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // u4e0bu8f7du5907u4efd
+        // 下载备份
         if (e.target.closest('.download-backup')) {
             const historyRow = e.target.closest('.history-row');
             const timestamp = historyRow.querySelector('.history-cell:nth-child(2)').textContent;
@@ -146,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // u767bu51fau529fu80fd
+    // 退出登录
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
@@ -161,13 +161,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.location.href = data.redirect || '/login';
                 }
             } catch (error) {
-                console.error('u767bu51fau8bf7u6c42u5931u8d25:', error);
-                alert('u767bu51fau5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5');
+                console.error('退出登录失败:', error);
+                alert('退出登录失败，请稍后重试');
             }
         });
     }
 
-    // u6dfbu52a0u6570u636eu5e93u6309u94ae
+    // 添加数据库按钮
     const addDatabaseBtn = document.getElementById('addDatabaseBtn');
     if (addDatabaseBtn) {
         addDatabaseBtn.addEventListener('click', () => {
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // u6dfbu52a0u5b58u50a8u6309u94ae
+    // 添加存储按钮
     const addStorageBtn = document.getElementById('addStorageBtn');
     if (addStorageBtn) {
         addStorageBtn.addEventListener('click', () => {
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // u624bu52a8u5907u4efdu6309u94ae
+    // 手动备份按钮
     const manualBackupBtn = document.getElementById('manualBackupBtn');
     if (manualBackupBtn) {
         manualBackupBtn.addEventListener('click', () => {
@@ -191,44 +191,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // u6570u636eu5e93u9879u76eeu64cdu4f5c
+    // 编辑数据库和测试数据库连接
     document.addEventListener('click', (e) => {
-        // u7f16u8f91u6570u636eu5e93
+        // 编辑数据库
         if (e.target.closest('.edit-db')) {
             const dbItem = e.target.closest('.database-item');
             const dbId = dbItem.getAttribute('data-id');
             editDatabase(dbId);
         }
 
-        // u6d4bu8bd5u6570u636eu5e93u8fdeu63a5
+        // 测试数据库连接
         if (e.target.closest('.test-db')) {
             const dbItem = e.target.closest('.database-item');
             const dbId = dbItem.getAttribute('data-id');
             testDatabaseConnection(dbId);
         }
 
-        // u5220u9664u6570u636eu5e93
+        // 删除数据库
         if (e.target.closest('.delete-db')) {
             const dbItem = e.target.closest('.database-item');
             const dbId = dbItem.getAttribute('data-id');
             deleteDatabase(dbId);
         }
 
-        // u7f16u8f91u5b58u50a8
+        // 编辑存储
         if (e.target.closest('.edit-storage')) {
             const storageItem = e.target.closest('.storage-item');
             const storageId = storageItem.getAttribute('data-id');
             editStorage(storageId);
         }
 
-        // u6d4bu8bd5u5b58u50a8u8fdeu63a5
+        // 测试存储连接
         if (e.target.closest('.test-storage')) {
             const storageItem = e.target.closest('.storage-item');
             const storageId = storageItem.getAttribute('data-id');
             testStorageConnection(storageId);
         }
 
-        // u5220u9664u5b58u50a8
+        // 删除存储
         if (e.target.closest('.delete-storage')) {
             const storageItem = e.target.closest('.storage-item');
             const storageId = storageItem.getAttribute('data-id');
@@ -236,9 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
-
-    // u8d26u6237u8bbeu7f6eu8868u5355
+    // 账户设置表单
     const accountSettingsForm = document.getElementById('accountSettingsForm');
     if (accountSettingsForm) {
         accountSettingsForm.addEventListener('submit', async (e) => {
@@ -248,15 +246,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = formData.get('name');
             const password = formData.get('password');
 
-            // u9a8cu8bc1u8f93u5165
+            // 验证必填项
             if (!name) {
-                alert('u59d3u540du4e0du80fdu4e3au7a7a');
+                alert('请输入用户名');
                 return;
             }
 
-            // u5982u679cu63d0u4f9bu4e86u5bc6u7801uff0cu9a8cu8bc1u5bc6u7801u957fu5ea6
+            // 如果提供了密码，验证密码长度
             if (password && password.length < 6) {
-                alert('u5bc6u7801u957fu5ea6u81f3u5c11u4e3a6u4e2au5b57u7b26');
+                alert('密码长度至少需要6个字符');
                 return;
             }
 
@@ -265,13 +263,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 password: password
             };
 
-            console.log('u63d0u4ea4u8d26u6237u8bbeu7f6eu66f4u65b0:', { name, hasPassword: !!password });
+            console.log('提交账户设置更新:', { name, hasPassword: !!password });
 
             try {
-                // u663eu793au52a0u8f7du72b6u6001
+                // 禁用提交按钮以防止重复提交
                 const submitButton = accountSettingsForm.querySelector('button[type="submit"]');
                 const originalText = submitButton.textContent;
-                submitButton.textContent = 'u66f4u65b0u4e2d...';
+                submitButton.textContent = '更新中...';
                 submitButton.disabled = true;
 
                 const response = await fetch('/api/settings/account', {
@@ -283,42 +281,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 const data = await response.json();
-                console.log('u8d26u6237u8bbeu7f6eu66f4u65b0u54cdu5e94:', data);
+                console.log('账户设置更新响应:', data);
 
-                // u6062u590du6309u94aeu72b6u6001
+                // 恢复提交按钮状态
                 submitButton.textContent = originalText;
                 submitButton.disabled = false;
 
                 if (response.ok && data.success) {
-                    alert('u8d26u6237u8bbeu7f6eu5df2u66f4u65b0' + (password ? 'uff0cu8bf7u4f7fu7528u65b0u5bc6u7801u91cdu65b0u767bu5f55' : ''));
-                    // u6e05u7a7au5bc6u7801u5b57u6bb5
+                    alert('账户设置已更新' + (password ? '，请使用新密码登录' : ''));
+                    // 清除密码输入框
                     document.getElementById('accountPassword').value = '';
 
-                    // u5982u679cu66f4u65b0u4e86u5bc6u7801uff0cu5ef6u8fdfu540eu767bu51fa
+                    // 如果更新了密码，1.5秒后自动退出登录
                     if (password) {
                         setTimeout(() => {
-                            // u767bu51fau5e76u91cdu5b9au5411u5230u767bu5f55u9875u9762
+                            // 重定向到登录页面
                             fetch('/api/logout', { method: 'POST' })
                                 .then(() => {
                                     window.location.href = '/login';
                                 })
                                 .catch(err => {
-                                    console.error('u767bu51fau5931u8d25:', err);
+                                    console.error('退出登录失败:', err);
                                     window.location.href = '/login';
                                 });
                         }, 1500);
                     }
                 } else {
-                    alert(data.message || 'u66f4u65b0u8d26u6237u8bbeu7f6eu5931u8d25');
+                    alert(data.message || '账户设置更新失败');
                 }
             } catch (error) {
-                console.error('u66f4u65b0u8d26u6237u8bbeu7f6eu5931u8d25:', error);
-                alert('u66f4u65b0u8d26u6237u8bbeu7f6eu5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5');
+                console.error('账户设置更新失败:', error);
+                alert('账户设置更新失败，请稍后重试');
             }
         });
     }
 
-    // u5907u4efdu5386u53f2u7b5bu9009
+    // 历史记录过滤器
     const historyFilter = document.getElementById('historyFilter');
     if (historyFilter) {
         historyFilter.addEventListener('change', () => {
@@ -417,7 +415,7 @@ function showDatabaseModal(dbData = null) {
 
     document.body.appendChild(modal);
 
-    // u5173u95edu6a21u6001u6846
+    // 关闭模态框
     const closeButtons = modal.querySelectorAll('.close-modal');
     closeButtons.forEach(button => {
         button.addEventListener('click', () => {
@@ -425,27 +423,27 @@ function showDatabaseModal(dbData = null) {
         });
     });
 
-    // u70b9u51fbu6a21u6001u6846u5916u90e8u5173u95ed - u6dfbu52a0u786eu8ba4u673au5236u9632u6b62u8befu64cdu4f5c
+    // 点击模态框外部关闭 - 添加确认机制防止误操作
     setupModalCloseConfirmation(modal);
 
-    // u5904u7406u9009u9879u5361u5207u6362
+    // 处理选项卡切换
     const tabButtons = modal.querySelectorAll('.tab-btn');
     const tabContents = modal.querySelectorAll('.tab-content');
 
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
-            // u79fbu9664u6240u6709u6d3bu52a8u7c7b
+            // 移除所有活动类
             tabButtons.forEach(btn => btn.classList.remove('active'));
             tabContents.forEach(content => content.classList.remove('active'));
 
-            // u6dfbu52a0u6d3bu52a8u7c7bu5230u5f53u524du6309u94aeu548cu5bf9u5e94u5185u5bb9
+            // 添加活动类到当前选项卡和相应内容
             button.classList.add('active');
             const tabId = button.getAttribute('data-tab');
             document.getElementById(`${tabId}-tab`).classList.add('active');
         });
     });
 
-    // u5982u679cu662fu7f16u8f91u6a21u5f0fuff0cu9884u586bu8fdeu63a5u5b57u7b26u4e32
+    // 如果编辑数据库，预填充连接字符串
     if (dbData) {
         const connectionStringInput = modal.querySelector('#dbConnectionString');
         if (connectionStringInput && dbData.user && dbData.host) {
@@ -454,19 +452,19 @@ function showDatabaseModal(dbData = null) {
         }
     }
 
-    // u8fdeu63a5u5b57u7b26u4e32u89e3u6790u51fdu6570
+    // 连接字符串解析函数
     function parseConnectionString(connectionString) {
         try {
-            console.log("u5f00u59cbu89e3u6790u8fdeu63a5u5b57u7b26u4e32:", connectionString);
+            console.log("开始解析连接字符串:", connectionString);
             const result = {};
             let cleanString = connectionString.trim();
 
-            // u79fbu9664u53efu80fdu7684u534fu8baeu524du7f00 (mysql://)
+            // 移除可选的前缀 (mysql://)
             if (cleanString.startsWith('mysql://')) {
                 cleanString = cleanString.substring(8);
             }
 
-            // u5904u7406u67e5u8be2u53c2u6570
+            // 处理主部分和查询参数
             let mainPart = cleanString;
             let queryParams = {};
 
@@ -474,7 +472,7 @@ function showDatabaseModal(dbData = null) {
                 const parts = cleanString.split('?');
                 mainPart = parts[0];
 
-                // u89e3u6790u67e5u8be2u53c2u6570
+                // 解析查询参数
                 if (parts[1]) {
                     const queryParts = parts[1].split('&');
                     queryParts.forEach(param => {
@@ -485,32 +483,32 @@ function showDatabaseModal(dbData = null) {
                     });
                 }
 
-                // u5b58u50a8SSLu76f8u5173u53c2u6570
+                // 处理SSL相关参数
                 if (queryParams['ssl-mode'] || queryParams['sslmode']) {
                     result.sslMode = queryParams['ssl-mode'] || queryParams['sslmode'];
                 }
             }
 
-            // u63d0u53d6u8ba4u8bc1u4fe1u606fu548cu4e3bu673au4fe1u606f
+            // 解析用户名和密码
             const atIndex = mainPart.lastIndexOf('@');
             if (atIndex !== -1) {
-                // u63d0u53d6u7528u6237u540du548cu5bc6u7801
+                // 解析用户名和密码
                 const authPart = mainPart.substring(0, atIndex);
                 const authParts = authPart.split(':');
                 result.user = authParts[0];
-                result.password = authParts.length > 1 ? authParts.slice(1).join(':') : ''; // u5904u7406u5bc6u7801u4e2du53efu80fdu5305u542bu5192u53f7u7684u60c5u51b5
+                result.password = authParts.length > 1 ? authParts.slice(1).join(':') : ''; // 处理密码中包含冒号的特殊情况
 
-                // u63d0u53d6u4e3bu673au3001u7aefu53e3u548cu6570u636eu5e93
+                // 解析主机和端口
                 const hostPart = mainPart.substring(atIndex + 1);
 
-                // u68c0u67e5u662fu5426u4f7fu7528tcp(host:port)u683cu5f0f
+                // 检查是否为TCP格式
                 const tcpMatch = hostPart.match(/tcp\(([^:]+):(\d+)\)\/(.+)/);
                 if (tcpMatch) {
                     result.host = tcpMatch[1];
                     result.port = tcpMatch[2];
                     result.databases = tcpMatch[3].split(',').map(db => db.trim());
                 } else {
-                    // u4f7fu7528u6807u51c6URLu683cu5f0f host:port/database
+                    // 检查是否为标准URL格式 host:port/database
                     const hostPortDbParts = hostPart.split('/');
 
                     if (hostPortDbParts.length > 0) {
@@ -520,7 +518,7 @@ function showDatabaseModal(dbData = null) {
                         result.host = hostPortParts[0];
                         result.port = hostPortParts.length > 1 ? hostPortParts[1] : '3306';
 
-                        // u63d0u53d6u6570u636eu5e93u540du79f0
+                        // 解析数据库名称
                         if (hostPortDbParts.length > 1) {
                             result.databases = hostPortDbParts[1].split(',').map(db => db.trim());
                         }
@@ -528,15 +526,15 @@ function showDatabaseModal(dbData = null) {
                 }
             }
 
-            console.log("u89e3u6790u7ed3u679c:", result);
+            console.log("解析结果:", result);
             return result;
         } catch (error) {
-            console.error('u89e3u6790u8fdeu63a5u5b57u7b26u4e32u5931u8d25:', error);
+            console.error('解析连接字符串失败:', error);
             return null;
         }
     }
 
-    // u8fdeu63a5u5b57u7b26u4e32u8f93u5165u53d8u5316u65f6uff0cu81eau52a8u586bu5145u9ad8u7ea7u6a21u5f0fu5b57u6bb5
+    // 连接字符串输入变化时自动填充表单
     const connectionStringInput = modal.querySelector('#dbConnectionString');
     if (connectionStringInput) {
         connectionStringInput.addEventListener('input', () => {
@@ -544,7 +542,7 @@ function showDatabaseModal(dbData = null) {
             if (connectionString) {
                 const parsedData = parseConnectionString(connectionString);
                 if (parsedData) {
-                    // u586bu5145u9ad8u7ea7u6a21u5f0fu5b57u6bb5
+                    // 自动填充表单
                     if (parsedData.host) modal.querySelector('#dbHost').value = parsedData.host;
                     if (parsedData.port) modal.querySelector('#dbPort').value = parsedData.port;
                     if (parsedData.user) modal.querySelector('#dbUser').value = parsedData.user;
@@ -555,7 +553,7 @@ function showDatabaseModal(dbData = null) {
         });
     }
 
-    // u8868u5355u63d0u4ea4
+    // 表单提交
     const form = modal.querySelector('#databaseForm');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -563,31 +561,31 @@ function showDatabaseModal(dbData = null) {
         const formData = new FormData(form);
         const dbFormError = document.getElementById('dbFormError');
 
-        // u68c0u67e5u662fu5426u4f7fu7528u4e86u8fdeu63a5u5b57u7b26u4e32
+        // 检查是否为有效连接字符串
         const connectionString = formData.get('connectionString');
         if (connectionString && connectionString.trim()) {
             const parsedData = parseConnectionString(connectionString.trim());
             if (parsedData) {
-                // u4f7fu7528u89e3u6790u7684u6570u636eu66ffu6362u8868u5355u6570u636e
+                // 将解析后的数据添加到表单
                 if (parsedData.host) formData.set('host', parsedData.host);
                 if (parsedData.port) formData.set('port', parsedData.port);
                 if (parsedData.user) formData.set('user', parsedData.user);
                 if (parsedData.password) formData.set('password', parsedData.password);
                 if (parsedData.databases) formData.set('databases', parsedData.databases.join(', '));
             } else {
-                dbFormError.textContent = 'u8fdeu63a5u5b57u7b26u4e32u683cu5f0fu65e0u6548uff0cu8bf7u68c0u67e5u540eu91cdu8bd5';
+                dbFormError.textContent = '无效的连接字符串格式，请检查后重试';
                 return;
             }
         }
 
-        // u9a8cu8bc1u5fc5u586bu5b57u6bb5
+        // 验证必填项
         const name = formData.get('name');
         const host = formData.get('host');
         const user = formData.get('user');
         const databases = formData.get('databases');
 
         if (!name || !host || !user || !databases) {
-            dbFormError.textContent = 'u8bf7u586bu5199u6240u6709u5fc5u8981u5b57u6bb5';
+            dbFormError.textContent = '请填写所有必填项';
             return;
         }
 
@@ -606,16 +604,16 @@ function showDatabaseModal(dbData = null) {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // u6210u529fuff0cu5173u95edu6a21u6001u6846u5e76u5237u65b0u9875u9762
+                // 成功，关闭模态框并刷新页面
                 document.body.removeChild(modal);
                 window.location.reload();
             } else {
-                // u5931u8d25uff0cu663eu793au9519u8befu4fe1u606f
-                dbFormError.textContent = data.message || 'u64cdu4f5cu5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5';
+                // 失败，显示错误信息
+                dbFormError.textContent = data.message || '数据库更新失败，请稍后重试';
             }
         } catch (error) {
-            console.error('u8bf7u6c42u5931u8d25:', error);
-            dbFormError.textContent = 'u8bf7u6c42u5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5';
+            console.error('数据库更新失败:', error);
+            dbFormError.textContent = '数据库更新失败，请稍后重试';
         }
     });
 }
@@ -678,7 +676,7 @@ function showStorageModal(storageData = null) {
 
     document.body.appendChild(modal);
 
-    // u5173u95edu6a21u6001u6846
+    // 关闭模态框
     const closeButtons = modal.querySelectorAll('.close-modal');
     closeButtons.forEach(button => {
         button.addEventListener('click', () => {
@@ -686,10 +684,10 @@ function showStorageModal(storageData = null) {
         });
     });
 
-    // u70b9u51fbu6a21u6001u6846u5916u90e8u5173u95ed - u6dfbu52a0u786eu8ba4u673au5236u9632u6b62u8befu64cdu4f5c
+    // 点击模态框外部关闭 - 添加确认机制防止误操作
     setupModalCloseConfirmation(modal);
 
-    // u8868u5355u63d0u4ea4
+    // 表单提交
     const form = modal.querySelector('#storageForm');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -697,7 +695,7 @@ function showStorageModal(storageData = null) {
         const formData = new FormData(form);
         const storageFormError = document.getElementById('storageFormError');
 
-        // u5904u7406u590du9009u6846
+        // 处理激活状态
         formData.set('active', formData.has('active') ? 'true' : 'false');
 
         try {
@@ -715,16 +713,16 @@ function showStorageModal(storageData = null) {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // u6210u529fuff0cu5173u95edu6a21u6001u6846u5e76u5237u65b0u9875u9762
+                // 成功，关闭模态框并刷新页面
                 document.body.removeChild(modal);
                 window.location.reload();
             } else {
-                // u5931u8d25uff0cu663eu793au9519u8befu4fe1u606f
-                storageFormError.textContent = data.message || 'u64cdu4f5cu5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5';
+                // 失败，显示错误信息
+                storageFormError.textContent = data.message || '存储配置更新失败，请稍后重试';
             }
         } catch (error) {
-            console.error('u8bf7u6c42u5931u8d25:', error);
-            storageFormError.textContent = 'u8bf7u6c42u5931u8d25uff0cu8bf7u7a0du540eu91cdu8bd5';
+            console.error('存储配置更新失败:', error);
+            storageFormError.textContent = '存储配置更新失败，请稍后重试';
         }
     });
 }
@@ -889,7 +887,7 @@ function showBackupModal() {
             }
         });
     } else {
-        console.error('u672au627eu5230u5907u4efdu8868u5355u5143u7d20');
+        console.error('未找到备份表单元素');
     }
 }
 
@@ -1201,13 +1199,26 @@ function showScheduleBackupModal() {
                         break;
                 }
 
-                // 准备发送的数据 - 使用正确的字段名
+                // 准备发送的数据
                 const scheduleFormData = new FormData();
-                // 添加数据库ID
+                
+                // 添加数据库ID列表
                 selectedDatabases.forEach(db => {
                     scheduleFormData.append('databases', db);
                 });
-                scheduleFormData.append('storageId', formData.get('storageId'));
+                
+                // 添加存储ID
+                const storageId = formData.get('storageId');
+                if (!storageId) {
+                    scheduleFormError.textContent = '请选择一个存储配置';
+                    scheduleFormError.style.color = 'red';
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.textContent = '保存计划';
+                    }
+                    return;
+                }
+                scheduleFormData.append('storageId', storageId);
                 
                 // 转换前端字段名为后端期望的字段名
                 // 将cron表达式拆分为frequency和time
@@ -1242,13 +1253,22 @@ function showScheduleBackupModal() {
                 console.log('发送计划备份请求');
                 console.log('生成的Cron表达式:', cronExpression);
                 console.log('保留天数:', formData.get('retentionDays'));
+                console.log('选中的数据库IDs:', selectedDatabases);
+                console.log('存储ID:', storageId);
 
+                // 将FormData转换为URL编码字符串
+                const formDataParams = new URLSearchParams();
+                for (const [key, value] of scheduleFormData.entries()) {
+                    formDataParams.append(key, value);
+                }
+                
+                // 发送请求
                 const response = await fetch('/api/backup/schedule', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: new URLSearchParams(scheduleFormData)
+                    body: formDataParams
                 });
 
                 console.log('计划备份请求响应状态:', response.status);
@@ -1298,6 +1318,12 @@ async function loadScheduleFormData() {
             // 首先加载用户已有的计划备份配置
             console.log('请求已保存的计划备份设置');
             const scheduleConfigResponse = await fetch('/api/backup/schedule');
+            
+            if (!scheduleConfigResponse.ok) {
+                console.error('获取计划备份设置失败:', scheduleConfigResponse.status);
+                throw new Error(`获取计划备份设置失败: ${scheduleConfigResponse.status}`);
+            }
+            
             const scheduleConfigData = await scheduleConfigResponse.json();
             console.log('已保存的计划备份设置响应:', scheduleConfigData);
             
@@ -1324,6 +1350,7 @@ async function loadScheduleFormData() {
 
             // 如果有已保存的数据库列表，获取它们的ID
             const savedDatabaseIds = savedConfig?.databases || [];
+            console.log('已保存的数据库IDs:', savedDatabaseIds);
 
             if (dbData.success && dbData.databases && dbData.databases.length > 0) {
                 dbData.databases.forEach(db => {
@@ -1392,6 +1419,8 @@ async function loadScheduleFormData() {
             
             // 如果有保存的配置，设置其他表单字段
             if (savedConfig) {
+                console.log('正在填充已保存的配置到表单:', savedConfig);
+                
                 // 设置备份频率
                 const scheduleTypeSelect = document.getElementById('scheduleCron');
                 if (scheduleTypeSelect) {
@@ -1407,24 +1436,37 @@ async function loadScheduleFormData() {
                         case 'monthly':
                             scheduleType = 'monthly';
                             break;
+                        default:
+                            console.log('未知的频率类型:', savedConfig.frequency, '使用默认值daily');
+                            scheduleType = 'daily';
+                            break;
                     }
                     
+                    console.log('设置备份频率为:', scheduleType);
                     scheduleTypeSelect.value = scheduleType;
                     // 触发change事件以显示相应的子选项
                     scheduleTypeSelect.dispatchEvent(new Event('change'));
+                } else {
+                    console.error('未找到备份频率选择器');
                 }
                 
                 // 设置备份时间
                 const scheduleTimeInput = document.getElementById('scheduleTime');
                 if (scheduleTimeInput && savedConfig.time) {
+                    console.log('设置备份时间为:', savedConfig.time);
                     scheduleTimeInput.value = savedConfig.time;
+                } else {
+                    console.error('未找到备份时间输入框或时间值为空');
                 }
                 
                 // 设置星期几（如果是每周备份）
                 if (savedConfig.frequency === 'weekly' && savedConfig.weekday !== undefined) {
                     const weekdaySelect = document.getElementById('scheduleWeekday');
                     if (weekdaySelect) {
+                        console.log('设置星期几为:', savedConfig.weekday.toString());
                         weekdaySelect.value = savedConfig.weekday.toString();
+                    } else {
+                        console.error('未找到星期几选择器');
                     }
                 }
                 
@@ -1432,15 +1474,26 @@ async function loadScheduleFormData() {
                 if (savedConfig.frequency === 'monthly' && savedConfig.dayOfMonth !== undefined) {
                     const monthDaySelect = document.getElementById('scheduleMonthDay');
                     if (monthDaySelect) {
+                        console.log('设置月日期为:', savedConfig.dayOfMonth.toString());
                         monthDaySelect.value = savedConfig.dayOfMonth.toString();
+                    } else {
+                        console.error('未找到月日期选择器');
                     }
                 }
                 
                 // 设置保留天数
                 const retentionInput = document.getElementById('retentionDays');
                 if (retentionInput && savedConfig.retention) {
+                    console.log('设置保留天数为:', savedConfig.retention.toString());
                     retentionInput.value = savedConfig.retention.toString();
+                } else {
+                    console.error('未找到保留天数输入框或保留天数值为空');
                 }
+                
+                // 确保相关的容器显示或隐藏
+                updateScheduleFormVisibility(savedConfig.frequency);
+            } else {
+                console.log('没有找到已保存的计划备份配置');
             }
 
             console.log('计划备份表单数据加载完成');
@@ -1456,4 +1509,29 @@ async function loadScheduleFormData() {
             reject(error);
         }
     });
+}
+
+// 辅助函数：根据频率更新表单UI元素的可见性
+function updateScheduleFormVisibility(frequency) {
+    const weekdayWrapper = document.getElementById('weekdayWrapper');
+    const monthDayWrapper = document.getElementById('monthDayWrapper');
+    const customCronWrapper = document.getElementById('customCronWrapper');
+    
+    // 默认隐藏所有相关容器
+    if (weekdayWrapper) weekdayWrapper.style.display = 'none';
+    if (monthDayWrapper) monthDayWrapper.style.display = 'none';
+    if (customCronWrapper) customCronWrapper.style.display = 'none';
+    
+    // 根据频率显示相应容器
+    switch (frequency) {
+        case 'weekly':
+            if (weekdayWrapper) weekdayWrapper.style.display = 'block';
+            break;
+        case 'monthly':
+            if (monthDayWrapper) monthDayWrapper.style.display = 'block';
+            break;
+        case 'custom':
+            if (customCronWrapper) customCronWrapper.style.display = 'block';
+            break;
+    }
 }
