@@ -1471,8 +1471,8 @@ async function executeBackup(task) {
           
           // 释放未压缩数据的引用 - 修复TypedArray不能设置length的问题
           // backupData.length = 0; // 旧代码，在TypedArray上不起作用
-          // 正确做法：直接将变量设为null，让垃圾回收器处理
-          backupData = null;
+          // 注意：不能直接设置 backupData = null，因为它是 const 声明的
+          // 让它自然离开作用域，垃圾回收器会处理
           
           // 生成文件名
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -1859,8 +1859,8 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
               const rowsLength = rows.length;
               // 清空rows引用 - 不能直接设置length=0，可能是TypedArray
               // rows.length = 0; // 这可能导致TypeError
-              // 保存长度信息后将rows设置为null更安全
-              rows = null;
+              // 不能设置 rows = null，因为它是 const 声明的
+              // 让垃圾回收器在变量离开作用域时处理
               
               // 在批量插入较大的表时提供进度反馈
               const progressPercent = Math.min(100, Math.round((currentPage * pageSize) / totalRows * 100));
