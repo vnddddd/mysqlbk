@@ -1313,7 +1313,36 @@ async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, 
       const authData = await authResponse.json();
       logInfo(`B2上传: 授权成功，获取到apiUrl: ${authData.apiUrl.split('/').slice(0, 3).join('/')}/...`);
 
-      // 第2步：获取上传URL
+      // 第2步：先获取bucketId
+      logInfo(`B2上传: 获取bucket信息`);
+      const listBucketsUrl = `${authData.apiUrl}/b2api/v2/b2_list_buckets`;
+      const listBucketsResponse = await fetch(listBucketsUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": authData.authorizationToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          accountId: authData.accountId
+        })
+      });
+
+      if (!listBucketsResponse.ok) {
+        const errorData = await listBucketsResponse.json();
+        throw new Error(`获取存储桶列表失败: ${errorData.message || errorData.code || "未知错误"} (HTTP ${listBucketsResponse.status})`);
+      }
+
+      const bucketsData = await listBucketsResponse.json();
+      const bucket = bucketsData.buckets.find(b => b.bucketName === bucketName);
+      
+      if (!bucket) {
+        throw new Error(`未找到名为 "${bucketName}" 的存储桶，请检查存储配置`);
+      }
+      
+      const bucketId = bucket.bucketId;
+      logInfo(`B2上传: 找到存储桶 "${bucketName}", bucketId: ${bucketId.substring(0, 5)}...`);
+      
+      // 第3步：获取上传URL
       logInfo(`B2上传: 获取上传URL`);
       const getUploadUrlUrl = `${authData.apiUrl}/b2api/v2/b2_get_upload_url`;
       const getUploadUrlResponse = await fetch(getUploadUrlUrl, {
@@ -1323,7 +1352,7 @@ async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, 
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          bucketId: bucketName
+          bucketId: bucketId
         })
       });
 
@@ -1335,7 +1364,7 @@ async function uploadToB2(fileData, fileName, applicationKeyId, applicationKey, 
       const uploadUrlData = await getUploadUrlResponse.json();
       logInfo(`B2上传: 获取到上传URL`);
 
-      // 第3步：上传文件
+      // 第4步：上传文件
       logInfo(`B2上传: 开始上传文件 ${fileName} (${fileData.length} 字节)`);
       
       // 计算文件SHA1
