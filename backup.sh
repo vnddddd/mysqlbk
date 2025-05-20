@@ -374,6 +374,15 @@ try:
             print(f'上传耗时: {upload_duration:.2f} 秒')
             print(f'上传速度: {file_size/upload_duration/1024:.2f} KB/s')
             print(f'B2文件ID: {uploaded_file.id_}')
+            
+            # 上传成功后立即删除本地备份文件
+            print(f'上传成功，删除本地备份文件: {local_file}')
+            try:
+                os.remove(local_file)
+                print(f'本地备份文件已删除: {local_file}')
+            except Exception as e:
+                print(f'删除本地备份文件失败: {str(e)}')
+            
             break  # 成功则跳出重试循环
             
         except Exception as e:

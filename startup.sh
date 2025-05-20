@@ -56,6 +56,20 @@ ensure_directories() {
     mkdir -p "$(dirname "$LOG_FILE")"
     touch "$LOG_FILE"
     
+    # 清理未删除的临时备份文件
+    log_info "检查并清理可能未删除的临时备份文件..."
+    OLD_BACKUP_FILES=$(find /app/backups -name "backup-*.sql.gz" -type f -mtime +1)
+    if [ -n "$OLD_BACKUP_FILES" ]; then
+        echo "$OLD_BACKUP_FILES" | while read -r file; do
+            log_info "删除过期的临时备份文件: $file"
+            rm -f "$file"
+        done
+        OLD_COUNT=$(echo "$OLD_BACKUP_FILES" | wc -l)
+        log_info "已删除 $OLD_COUNT 个超过1天的临时备份文件"
+    else
+        log_info "没有找到需要清理的临时备份文件"
+    fi
+    
     log_info "已确保必要的目录存在"
 }
 

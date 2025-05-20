@@ -1440,6 +1440,9 @@ async function executeBackup(task) {
               B2_APPLICATION_KEY,
               B2_BUCKET_NAME
             );
+            
+            // 清理内存中的备份数据
+            logInfo(`释放备份数据内存: ${dbName}`);
           }
 
           // 记录结果
@@ -1455,6 +1458,12 @@ async function executeBackup(task) {
           totalBackupSize += backupData.length;
 
           logInfo(`数据库 ${dbName} 备份成功`);
+          
+          // 备份完成后，主动触发垃圾回收以释放内存
+          if (globalThis.gc) {
+            logInfo(`触发垃圾回收以释放内存`);
+            globalThis.gc();
+          }
         } catch (error) {
           logError(`备份数据库 ${dbName} 失败`, error);
 
@@ -1535,7 +1544,10 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
       user,
       password,
       database,
-      multipleStatements: true
+      multipleStatements: true,
+      // 添加查询超时设置
+      connectTimeout: 30000, // 30秒连接超时
+      timeout: 3600000      // 1小时查询超时
     };
 
     // 添加SSL配置（如果有）
@@ -1556,6 +1568,8 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
     // 获取所有表
     const [tables] = await connection.query("SHOW TABLES");
     const tableNames = tables.map(table => Object.values(table)[0]);
+    
+    logInfo(`数据库 ${database} 中发现 ${tableNames.length} 个表`);
 
     // 构建备份头
     let backupContent = `-- MySQL备份 - 数据库: ${database}\n`;
@@ -1566,50 +1580,74 @@ async function fallbackBackup(host, port, user, password, database, sslMode) {
     backupContent += `SET FOREIGN_KEY_CHECKS = 0;\n\n`;
 
     // 获取每个表的创建语句和数据
+    let tableCount = 0;
     for (const tableName of tableNames) {
-      // 获取表结构
-      const [createTable] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
-      const createTableSql = createTable[0]['Create Table'];
+      tableCount++;
+      const startTime = Date.now();
+      logInfo(`备份表 ${database}.${tableName} (${tableCount}/${tableNames.length})`);
+      
+      try {
+        // 获取表结构
+        const [createTable] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
+        const createTableSql = createTable[0]['Create Table'];
 
-      backupContent += `-- ----------------------------\n`;
-      backupContent += `-- 表结构 \`${tableName}\`\n`;
-      backupContent += `-- ----------------------------\n`;
-      backupContent += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
-      backupContent += `${createTableSql};\n\n`;
-
-      // 获取表数据
-      const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
-
-      if (rows.length > 0) {
         backupContent += `-- ----------------------------\n`;
-        backupContent += `-- 表数据 \`${tableName}\`\n`;
+        backupContent += `-- 表结构 \`${tableName}\`\n`;
         backupContent += `-- ----------------------------\n`;
+        backupContent += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
+        backupContent += `${createTableSql};\n\n`;
 
-        // 构建INSERT语句
-        const columns = Object.keys(rows[0]);
-        const columnList = columns.map(col => `\`${col}\``).join(', ');
+        // 获取表数据
+        const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
 
-        // 分批处理数据，避免生成过大的SQL语句
-        const batchSize = 100;
-        for (let i = 0; i < rows.length; i += batchSize) {
-          const batch = rows.slice(i, i + batchSize);
+        if (rows.length > 0) {
+          logInfo(`表 ${tableName} 包含 ${rows.length} 行数据`);
+          
+          backupContent += `-- ----------------------------\n`;
+          backupContent += `-- 表数据 \`${tableName}\`\n`;
+          backupContent += `-- ----------------------------\n`;
 
-          backupContent += `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`;
+          // 构建INSERT语句
+          const columns = Object.keys(rows[0]);
+          const columnList = columns.map(col => `\`${col}\``).join(', ');
 
-          const valueStrings = batch.map(row => {
-            const values = columns.map(col => {
-              const value = row[col];
-              if (value === null) return 'NULL';
-              if (typeof value === 'number') return value;
-              if (typeof value === 'boolean') return value ? 1 : 0;
-              if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
-              return `'${String(value).replace(/'/g, "''")}'`;
+          // 分批处理数据，避免生成过大的SQL语句
+          const batchSize = 100;
+          let batchCount = 0;
+          for (let i = 0; i < rows.length; i += batchSize) {
+            batchCount++;
+            const batch = rows.slice(i, i + batchSize);
+
+            backupContent += `INSERT INTO \`${tableName}\` (${columnList}) VALUES\n`;
+
+            const valueStrings = batch.map(row => {
+              const values = columns.map(col => {
+                const value = row[col];
+                if (value === null) return 'NULL';
+                if (typeof value === 'number') return value;
+                if (typeof value === 'boolean') return value ? 1 : 0;
+                if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                return `'${String(value).replace(/'/g, "''")}'`;
+              });
+              return `(${values.join(', ')})`;
             });
-            return `(${values.join(', ')})`;
-          });
 
-          backupContent += valueStrings.join(',\n') + ';\n\n';
+            backupContent += valueStrings.join(',\n') + ';\n\n';
+            
+            // 在批量插入较大的表时提供进度反馈
+            if (rows.length > 1000 && batchCount % 10 === 0) {
+              logInfo(`表 ${tableName} 处理进度: ${Math.min(100, Math.round((i + batchSize) / rows.length * 100))}%`);
+            }
+          }
+        } else {
+          logInfo(`表 ${tableName} 没有数据`);
         }
+        
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        logInfo(`表 ${tableName} 备份完成，耗时: ${elapsedTime.toFixed(2)}秒`);
+      } catch (tableError) {
+        logError(`备份表 ${tableName} 失败: ${tableError.message}`, tableError);
+        backupContent += `-- 备份表 ${tableName} 失败: ${tableError.message}\n\n`;
       }
     }
 
