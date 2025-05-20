@@ -727,6 +727,137 @@ function showStorageModal(storageData = null) {
     });
 }
 
+// API端点缓存和管理
+const apiEndpointManager = {
+    // 保存成功的API端点路径
+    _successfulEndpoints: {},
+    
+    // 获取最佳API端点
+    getBestEndpoint: function(key, fallbackEndpoints) {
+        // 如果有缓存的成功端点，优先使用
+        if (this._successfulEndpoints[key]) {
+            return this._successfulEndpoints[key];
+        }
+        // 否则返回端点列表
+        return fallbackEndpoints;
+    },
+    
+    // 记录成功的端点
+    setSuccessfulEndpoint: function(key, endpoint) {
+        console.log(`记录成功的API端点: ${key} -> ${endpoint}`);
+        this._successfulEndpoints[key] = endpoint;
+        
+        // 尝试持久化到localStorage
+        try {
+            const savedEndpoints = JSON.parse(localStorage.getItem('apiEndpoints') || '{}');
+            savedEndpoints[key] = endpoint;
+            localStorage.setItem('apiEndpoints', JSON.stringify(savedEndpoints));
+        } catch (e) {
+            console.warn('无法保存API端点到localStorage:', e);
+        }
+    },
+    
+    // 初始化，从localStorage读取之前成功的端点
+    init: function() {
+        try {
+            const savedEndpoints = JSON.parse(localStorage.getItem('apiEndpoints') || '{}');
+            this._successfulEndpoints = savedEndpoints;
+            console.log('从localStorage加载的API端点:', this._successfulEndpoints);
+        } catch (e) {
+            console.warn('无法从localStorage读取API端点:', e);
+        }
+    }
+};
+
+// 初始化API端点管理器
+apiEndpointManager.init();
+
+// 优化的API请求函数 - 自动处理多端点尝试
+async function fetchWithEndpoints(endpointKey, endpointPaths, options = {}) {
+    const requestOptions = {
+        ...options,
+        headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            ...(options.headers || {})
+        }
+    };
+
+    // 获取最佳端点(单个字符串或多个端点数组)
+    const endpoints = apiEndpointManager.getBestEndpoint(endpointKey, endpointPaths);
+    const endpointsToTry = Array.isArray(endpoints) ? endpoints : [endpoints];
+    
+    if (!Array.isArray(endpoints)) {
+        console.log(`使用缓存的成功端点: ${endpointKey} -> ${endpoints}`);
+    }
+    
+    // 添加时间戳防止缓存
+    const addTimestamp = (url) => {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}_t=${new Date().getTime()}`;
+    };
+    
+    let lastError = null;
+    
+    // 尝试所有端点
+    for (const endpoint of endpointsToTry) {
+        try {
+            const url = addTimestamp(endpoint);
+            console.log(`尝试请求: ${url}`);
+            
+            // 添加超时处理
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 
+                options.timeout || 10000); // 默认10秒超时
+            
+            const response = await fetch(url, {
+                ...requestOptions,
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            console.log(`${endpoint} 响应状态: ${response.status}`);
+            
+            if (!response.ok) {
+                // 如果使用的是缓存的端点，尝试清除缓存
+                if (!Array.isArray(endpoints) && endpointPaths.length > 0) {
+                    delete apiEndpointManager._successfulEndpoints[endpointKey];
+                }
+                
+                const errorText = await response.text();
+                console.warn(`端点 ${endpoint} 返回错误: ${response.status}, ${errorText}`);
+                lastError = new Error(`HTTP ${response.status}: ${errorText}`);
+                continue;
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // 记录成功的端点
+                apiEndpointManager.setSuccessfulEndpoint(endpointKey, endpoint);
+                return { data, endpoint };
+            } else {
+                const message = data.message || '服务器返回了成功状态码但操作未成功';
+                console.warn(`${endpoint} 返回success=false: ${message}`);
+                lastError = new Error(message);
+            }
+        } catch (error) {
+            console.warn(`请求 ${endpoint} 失败:`, error.message);
+            lastError = error;
+            
+            // 如果是AbortError (超时)，给出更明确的错误消息
+            if (error.name === 'AbortError') {
+                lastError = new Error('请求超时，服务器响应时间过长');
+            }
+        }
+    }
+    
+    // 所有端点都失败了
+    throw lastError || new Error('所有API端点尝试均失败');
+}
+
 // 显示备份模态框
 function showBackupModal() {
     console.log('执行 showBackupModal 函数');
@@ -844,40 +975,63 @@ function showBackupModal() {
                     submitButton.textContent = '备份中...';
                 }
 
-                console.log('发送备份请求');
-                const response = await fetch('/api/backup', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: new URLSearchParams(formData)
-                });
-
-                console.log('备份请求响应状态:', response.status);
-                const data = await response.json();
-                console.log('备份请求响应数据:', data);
-
-                if (response.ok && data.success) {
-                    // 成功，关闭模态框并刷新页面
-                    console.log('备份任务提交成功');
-                    if (document.body.contains(modal)) {
-                        document.body.removeChild(modal);
-                    }
-                    alert('备份任务已提交，请在备份历史中查看结果');
-                    window.location.reload();
-                } else {
-                    // 失败，显示错误信息
-                    console.error('备份任务提交失败:', data);
-                    backupFormError.textContent = data.message || '操作失败，请稍后重试';
+                // 获取选中的数据库和存储
+                const storageId = formData.get('storageId');
+                if (!storageId) {
+                    backupFormError.textContent = '请选择一个存储配置';
                     backupFormError.style.color = 'red';
                     if (submitButton) {
                         submitButton.disabled = false;
                         submitButton.textContent = '开始备份';
                     }
+                    return;
                 }
+
+                console.log('提交备份请求:', {
+                    databases: selectedDatabases,
+                    storageId
+                });
+
+                // 定义备份API端点
+                const BACKUP_ENDPOINTS = [
+                    '/api/backup/start',
+                    '/api/backup',
+                    '/api/start-backup'
+                ];
+
+                // 将FormData转换为URL编码字符串
+                const formDataParams = new URLSearchParams();
+                for (const [key, value] of formData.entries()) {
+                    formDataParams.append(key, value);
+                }
+
+                // 使用统一的API请求函数提交表单
+                const result = await fetchWithEndpoints('backupStart', BACKUP_ENDPOINTS, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formDataParams,
+                    timeout: 10000 // 10秒超时
+                });
+
+                console.log('备份请求提交成功:', result.data);
+
+                // 成功，关闭模态框
+                if (document.body.contains(modal)) {
+                    document.body.removeChild(modal);
+                }
+
+                // 显示成功消息
+                alert('备份已开始，请查看备份历史获取进度');
+                
+                // 3秒后刷新页面以显示新的备份
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
             } catch (error) {
-                console.error('备份请求失败:', error);
-                backupFormError.textContent = `请求失败: ${error.message || '未知错误'}`;
+                console.error('备份请求失败:', error.message);
+                backupFormError.textContent = error.message || '服务器连接失败，请稍后重试';
                 backupFormError.style.color = 'red';
                 const submitButton = form.querySelector('button[type="submit"]');
                 if (submitButton) {
@@ -897,90 +1051,118 @@ async function loadBackupFormData() {
         try {
             console.log('开始加载备份表单数据');
 
+            // 定义API端点
+            const DB_ENDPOINTS = ['/api/databases', '/api/backup/databases'];
+            const STORAGE_ENDPOINTS = ['/api/storage', '/api/backup/storage'];
+
             // 加载数据库列表
             console.log('请求数据库列表');
-            const dbResponse = await fetch('/api/databases');
-            const dbData = await dbResponse.json();
-            console.log('数据库列表响应:', dbData);
-
-            const databaseCheckboxes = document.getElementById('databaseCheckboxes');
-            if (!databaseCheckboxes) {
-                console.error('未找到数据库复选框容器元素');
-                reject(new Error('DOM元素未找到: databaseCheckboxes'));
-                return;
-            }
-
-            databaseCheckboxes.innerHTML = '';
-
-            if (dbData.success && dbData.databases && dbData.databases.length > 0) {
-                dbData.databases.forEach(db => {
-                    const checkbox = document.createElement('div');
-                    checkbox.className = 'checkbox-item';
-                    checkbox.innerHTML = `
-            <label>
-              <input type="checkbox" name="databases" value="${db.id}">
-              ${db.name} (${db.databases.join(', ')})
-            </label>
-          `;
-                    databaseCheckboxes.appendChild(checkbox);
+            try {
+                const dbResult = await fetchWithEndpoints('databasesGet', DB_ENDPOINTS, {
+                    method: 'GET',
+                    timeout: 5000
                 });
-            } else {
-                databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
+                
+                const dbData = dbResult.data;
+                console.log('数据库列表响应:', dbData);
+
+                const databaseCheckboxes = document.getElementById('databaseCheckboxes');
+                if (!databaseCheckboxes) {
+                    console.error('未找到数据库复选框容器元素');
+                    reject(new Error('DOM元素未找到: databaseCheckboxes'));
+                    return;
+                }
+
+                databaseCheckboxes.innerHTML = '';
+
+                if (dbData.success && dbData.databases && dbData.databases.length > 0) {
+                    dbData.databases.forEach(db => {
+                        const checkbox = document.createElement('div');
+                        checkbox.className = 'checkbox-item';
+                        checkbox.innerHTML = `
+                <label>
+                  <input type="checkbox" name="databases" value="${db.id}">
+                  ${db.name} (${db.databases.join(', ')})
+                </label>
+              `;
+                        databaseCheckboxes.appendChild(checkbox);
+                    });
+                } else {
+                    databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
+                }
+            } catch (error) {
+                console.error('获取数据库列表失败:', error.message);
+                const databaseCheckboxes = document.getElementById('databaseCheckboxes');
+                if (databaseCheckboxes) {
+                    databaseCheckboxes.innerHTML = '<div class="error-message">加载数据库列表失败</div>';
+                }
             }
 
             // 加载存储列表
             console.log('请求存储列表');
-            const storageResponse = await fetch('/api/storage');
-            const storageData = await storageResponse.json();
-            console.log('存储列表响应:', storageData);
-
-            const storageSelect = document.getElementById('backupStorage');
-            if (!storageSelect) {
-                console.error('未找到存储选择器元素');
-                reject(new Error('DOM元素未找到: backupStorage'));
-                return;
-            }
-
-            // 清空现有选项
-            storageSelect.innerHTML = '';
-
-            if (storageData.success && storageData.storage && storageData.storage.length > 0) {
-                // 添加默认选项
-                const defaultOption = document.createElement('option');
-                defaultOption.value = '';
-                defaultOption.textContent = '-- 选择存储 --';
-                defaultOption.disabled = true;
-                storageSelect.appendChild(defaultOption);
-
-                // 添加存储选项
-                storageData.storage.forEach(storage => {
-                    const option = document.createElement('option');
-                    option.value = storage.id;
-                    option.textContent = storage.name;
-                    if (storage.active) {
-                        option.selected = true;
-                    }
-                    storageSelect.appendChild(option);
+            try {
+                const storageResult = await fetchWithEndpoints('storageGet', STORAGE_ENDPOINTS, {
+                    method: 'GET',
+                    timeout: 5000
                 });
-            } else {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = '没有可用的存储配置';
-                option.disabled = true;
-                option.selected = true;
-                storageSelect.appendChild(option);
+                
+                const storageData = storageResult.data;
+                console.log('存储列表响应:', storageData);
+
+                const storageSelect = document.getElementById('backupStorage');
+                if (!storageSelect) {
+                    console.error('未找到存储选择器元素');
+                    reject(new Error('DOM元素未找到: backupStorage'));
+                    return;
+                }
+
+                // 清空现有选项
+                storageSelect.innerHTML = '';
+
+                if (storageData.success && storageData.storage && storageData.storage.length > 0) {
+                    // 添加默认选项
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = '';
+                    defaultOption.textContent = '-- 选择存储 --';
+                    defaultOption.disabled = true;
+                    storageSelect.appendChild(defaultOption);
+
+                    // 添加存储选项
+                    storageData.storage.forEach(storage => {
+                        const option = document.createElement('option');
+                        option.value = storage.id;
+                        option.textContent = storage.name;
+                        if (storage.active) {
+                            option.selected = true;
+                        }
+                        storageSelect.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = '没有可用的存储配置';
+                    option.disabled = true;
+                    option.selected = true;
+                    storageSelect.appendChild(option);
+                }
+            } catch (error) {
+                console.error('获取存储列表失败:', error.message);
+                const storageSelect = document.getElementById('backupStorage');
+                if (storageSelect) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = '加载存储配置失败';
+                    option.disabled = true;
+                    option.selected = true;
+                    storageSelect.innerHTML = '';
+                    storageSelect.appendChild(option);
+                }
             }
 
             console.log('备份表单数据加载完成');
             resolve();
         } catch (error) {
             console.error('加载备份表单数据失败:', error);
-
-            const databaseCheckboxes = document.getElementById('databaseCheckboxes');
-            if (databaseCheckboxes) {
-                databaseCheckboxes.innerHTML = '<div class="error-message">加载数据失败</div>';
-            }
-
             reject(error);
         }
     });
@@ -1175,30 +1357,10 @@ function showScheduleBackupModal() {
                     submitButton.textContent = '保存中...';
                 }
 
-                // 生成cron表达式
+                // 获取表单数据并准备提交
                 const scheduleType = formData.get('scheduleType');
                 const scheduleTime = formData.get('scheduleTime');
-                const [hour, minute] = scheduleTime.split(':');
-
-                let cronExpression = '';
-
-                switch (scheduleType) {
-                    case 'daily':
-                        cronExpression = `${minute} ${hour} * * *`;
-                        break;
-                    case 'weekly':
-                        const weekday = formData.get('scheduleWeekday') || '0';
-                        cronExpression = `${minute} ${hour} * * ${weekday}`;
-                        break;
-                    case 'monthly':
-                        const monthDay = formData.get('scheduleMonthDay') || '1';
-                        cronExpression = `${minute} ${hour} ${monthDay} * *`;
-                        break;
-                    case 'custom':
-                        cronExpression = formData.get('customCron') || '0 0 * * *';
-                        break;
-                }
-
+                
                 // 准备发送的数据
                 const scheduleFormData = new FormData();
                 
@@ -1221,10 +1383,7 @@ function showScheduleBackupModal() {
                 scheduleFormData.append('storageId', storageId);
                 
                 // 转换前端字段名为后端期望的字段名
-                // 将cron表达式拆分为frequency和time
                 let frequency = '';
-                let dayOfMonth = '';
-                let weekday = '';
                 
                 switch (scheduleType) {
                     case 'daily':
@@ -1232,16 +1391,16 @@ function showScheduleBackupModal() {
                         break;
                     case 'weekly':
                         frequency = 'weekly';
-                        weekday = formData.get('scheduleWeekday') || '0';
+                        const weekday = formData.get('scheduleWeekday') || '0';
                         scheduleFormData.append('weekday', weekday);
                         break;
                     case 'monthly':
                         frequency = 'monthly';
-                        dayOfMonth = formData.get('scheduleMonthDay') || '1';
+                        const dayOfMonth = formData.get('scheduleMonthDay') || '1';
                         scheduleFormData.append('dayOfMonth', dayOfMonth);
                         break;
                     case 'custom':
-                        // 自定义cron表达式暂不支持，使用daily作为后备
+                        // 自定义cron表达式，使用daily作为后备
                         frequency = 'daily';
                         break;
                 }
@@ -1250,8 +1409,13 @@ function showScheduleBackupModal() {
                 scheduleFormData.append('time', scheduleTime);
                 scheduleFormData.append('retention', formData.get('retentionDays') || '30');
 
-                console.log('选中的数据库IDs:', selectedDatabases);
-                console.log('存储ID:', storageId);
+                console.log('提交计划备份设置:', {
+                    frequency,
+                    time: scheduleTime,
+                    retention: formData.get('retentionDays'),
+                    databases: selectedDatabases,
+                    storageId
+                });
 
                 // 将FormData转换为URL编码字符串
                 const formDataParams = new URLSearchParams();
@@ -1259,98 +1423,35 @@ function showScheduleBackupModal() {
                     formDataParams.append(key, value);
                 }
                 
-                // API端点列表 - 按优先级排序尝试
-                const scheduleApiEndpoints = [
+                // API端点定义
+                const SCHEDULE_ENDPOINTS = [
                     '/api/backup/schedule',
                     '/api/schedule',
                     '/api/schedule/backup'
                 ];
                 
-                let success = false;
-                let responseData = null;
-                let responseMessage = '';
+                // 使用统一的API请求函数提交表单
+                const result = await fetchWithEndpoints('schedulePost', SCHEDULE_ENDPOINTS, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formDataParams,
+                    timeout: 10000 // 10秒超时
+                });
                 
-                // 尝试所有端点直到成功
-                for (const endpoint of scheduleApiEndpoints) {
-                    try {
-                        console.log(`尝试提交到计划备份端点: ${endpoint}`);
-                        
-                        // 发送请求，添加超时处理
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-                        
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                                'Pragma': 'no-cache',
-                                'Expires': '0'
-                            },
-                            body: formDataParams,
-                            signal: controller.signal
-                        });
-                        
-                        clearTimeout(timeoutId); // 清除超时
-                        
-                        console.log(`${endpoint} 响应状态码:`, response.status);
-                        
-                        // 检查HTTP状态码
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            console.warn(`端点 ${endpoint} 返回错误: ${response.status}, ${errorText}`);
-                            continue; // 尝试下一个端点
-                        }
-                        
-                        // 解析JSON响应
-                        const data = await response.json();
-                        console.log(`${endpoint} 响应数据:`, data);
-                        
-                        if (data.success) {
-                            // 成功！
-                            success = true;
-                            responseData = data;
-                            console.log(`计划备份设置成功保存到端点 ${endpoint}`);
-                            break; // 停止尝试其他端点
-                        } else {
-                            // API返回了成功状态码但success字段为false
-                            console.warn(`端点 ${endpoint} 返回成功状态码但数据不正确:`, data);
-                            responseMessage = data.message || '服务器返回未知错误';
-                        }
-                    } catch (endpointError) {
-                        console.warn(`请求端点 ${endpoint} 失败:`, endpointError.message);
-                        
-                        // 检查是否是超时错误
-                        if (endpointError.name === 'AbortError') {
-                            console.error(`端点 ${endpoint} 请求超时`);
-                            responseMessage = '请求超时，服务器响应时间过长';
-                        } else {
-                            responseMessage = endpointError.message || '连接服务器失败';
-                        }
-                    }
-                }
+                console.log('计划备份设置提交成功:', result.data);
                 
-                if (success) {
-                    // 成功，关闭模态框并刷新页面
-                    console.log('计划备份设置成功');
-                    if (document.body.contains(modal)) {
-                        document.body.removeChild(modal);
-                    }
-                    alert('计划备份已设置');
-                    window.location.reload();
-                } else {
-                    // 所有端点尝试都失败
-                    console.error('所有API端点尝试失败，无法保存计划备份设置');
-                    scheduleFormError.textContent = responseMessage || '服务器连接失败，请稍后重试';
-                    scheduleFormError.style.color = 'red';
-                    if (submitButton) {
-                        submitButton.disabled = false;
-                        submitButton.textContent = '保存计划';
-                    }
+                // 成功，关闭模态框并刷新页面
+                console.log('计划备份设置成功');
+                if (document.body.contains(modal)) {
+                    document.body.removeChild(modal);
                 }
+                alert('计划备份已设置');
+                window.location.reload();
             } catch (error) {
-                console.error('计划备份请求失败:', error);
-                scheduleFormError.textContent = `请求失败: ${error.message || '未知错误'}`;
+                console.error('计划备份请求失败:', error.message);
+                scheduleFormError.textContent = error.message || '服务器连接失败，请稍后重试';
                 scheduleFormError.style.color = 'red';
                 const submitButton = form.querySelector('button[type="submit"]');
                 if (submitButton) {
@@ -1370,176 +1471,131 @@ async function loadScheduleFormData() {
         try {
             console.log('开始加载计划备份表单数据');
             
-            // API端点列表 - 按优先级排序尝试
-            const scheduleApiEndpoints = [
+            // API端点定义
+            const SCHEDULE_ENDPOINTS = [
                 '/api/backup/schedule',
                 '/api/schedule',
                 '/api/schedule/backup'
             ];
             
+            // 使用统一的API请求函数获取计划备份设置
             let savedConfig = null;
-            let successfulEndpoint = null;
+            let result;
             
-            // 尝试所有端点直到成功
-            for (const endpoint of scheduleApiEndpoints) {
-                try {
-                    // 首先加载用户已有的计划备份配置
-                    console.log(`尝试请求备份计划端点: ${endpoint}`);
-                    
-                    // 添加时间戳和禁用缓存的请求头
-                    const scheduleUrl = `${endpoint}?_t=${new Date().getTime()}`;
-                    
-                    const scheduleConfigResponse = await fetch(scheduleUrl, {
-                        method: 'GET', 
-                        headers: {
-                            'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache',
-                            'Expires': '0'
-                        },
-                        // 短暂超时，以便快速尝试下一个端点
-                        timeout: 3000
+            try {
+                // 获取计划备份设置
+                result = await fetchWithEndpoints('scheduleGet', SCHEDULE_ENDPOINTS, {
+                    method: 'GET',
+                    timeout: 5000 // 5秒超时
+                });
+                
+                if (result.data.config) {
+                    savedConfig = result.data.config;
+                    console.log('成功获取计划备份设置:', savedConfig);
+                } else {
+                    console.log('未找到已保存的计划备份设置');
+                }
+            } catch (error) {
+                console.warn('获取计划备份设置失败:', error.message);
+                // 这里我们继续执行，因为即使没有已保存的设置，我们仍然可以加载表单
+            }
+            
+            // 获取数据库列表
+            try {
+                console.log('请求数据库列表');
+                const dbResult = await fetchWithEndpoints('databasesGet', ['/api/databases'], {
+                    method: 'GET'
+                });
+                
+                const dbData = dbResult.data;
+                console.log('数据库列表响应:', dbData);
+                
+                const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
+                if (!databaseCheckboxes) {
+                    throw new Error('DOM元素未找到: scheduleDatabaseCheckboxes');
+                }
+                
+                databaseCheckboxes.innerHTML = '';
+                
+                // 如果有已保存的数据库列表，获取它们的ID
+                const savedDatabaseIds = savedConfig?.databases || [];
+                console.log('已保存的数据库IDs:', savedDatabaseIds);
+                
+                if (dbData.success && dbData.databases && dbData.databases.length > 0) {
+                    dbData.databases.forEach(db => {
+                        const checkbox = document.createElement('div');
+                        checkbox.className = 'checkbox-item';
+                        // 如果数据库ID在已保存列表中，则选中它
+                        const isChecked = savedDatabaseIds.includes(db.id) ? 'checked' : '';
+                        checkbox.innerHTML = `
+                <label>
+                  <input type="checkbox" name="scheduleDatabases" value="${db.id}" ${isChecked}>
+                  ${db.name} (${db.databases.join(', ')})
+                </label>
+              `;
+                        databaseCheckboxes.appendChild(checkbox);
                     });
-                    
-                    // 检查响应状态码
-                    console.log(`${endpoint} 响应状态码: ${scheduleConfigResponse.status}`);
-                    
-                    if (!scheduleConfigResponse.ok) {
-                        console.warn(`端点 ${endpoint} 返回错误: ${scheduleConfigResponse.status}`);
-                        continue; // 尝试下一个端点
-                    }
-                    
-                    const scheduleConfigData = await scheduleConfigResponse.json();
-                    console.log(`${endpoint} 响应数据:`, scheduleConfigData);
-                    
-                    if (scheduleConfigData.success) {
-                        savedConfig = scheduleConfigData.config;
-                        successfulEndpoint = endpoint;
-                        console.log(`成功从 ${endpoint} 获取计划备份设置:`, savedConfig);
-                        break; // 成功获取配置，停止尝试其他端点
-                    } else {
-                        console.warn(`端点 ${endpoint} 返回成功状态码但数据不正确:`, scheduleConfigData);
-                    }
-                } catch (endpointError) {
-                    console.warn(`请求端点 ${endpoint} 失败:`, endpointError.message);
+                } else {
+                    databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
                 }
-            }
-            
-            if (!successfulEndpoint) {
-                console.error('所有API端点尝试失败，无法获取计划备份设置');
-            } else {
-                console.log(`使用成功的API端点: ${successfulEndpoint}`);
-            }
-
-            // 加载数据库列表
-            console.log('请求数据库列表');
-            const dbResponse = await fetch('/api/databases', {
-                headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
-                }
-            });
-            
-            // 检查数据库响应状态
-            if (!dbResponse.ok) {
-                const errorText = await dbResponse.text();
-                console.error(`获取数据库列表失败: 状态码=${dbResponse.status}, 错误信息=${errorText}`);
-                throw new Error(`获取数据库列表失败: ${dbResponse.status}`);
-            }
-            
-            const dbData = await dbResponse.json();
-            console.log('数据库列表响应:', dbData);
-
-            const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
-            if (!databaseCheckboxes) {
-                console.error('未找到数据库复选框容器元素');
-                reject(new Error('DOM元素未找到: scheduleDatabaseCheckboxes'));
+            } catch (error) {
+                console.error('获取数据库列表失败:', error.message);
+                reject(error);
                 return;
             }
-
-            databaseCheckboxes.innerHTML = '';
-
-            // 如果有已保存的数据库列表，获取它们的ID
-            const savedDatabaseIds = savedConfig?.databases || [];
-            console.log('已保存的数据库IDs:', savedDatabaseIds);
-
-            if (dbData.success && dbData.databases && dbData.databases.length > 0) {
-                dbData.databases.forEach(db => {
-                    const checkbox = document.createElement('div');
-                    checkbox.className = 'checkbox-item';
-                    // 如果数据库ID在已保存列表中，则选中它
-                    const isChecked = savedDatabaseIds.includes(db.id) ? 'checked' : '';
-                    checkbox.innerHTML = `
-            <label>
-              <input type="checkbox" name="scheduleDatabases" value="${db.id}" ${isChecked}>
-              ${db.name} (${db.databases.join(', ')})
-            </label>
-          `;
-                    databaseCheckboxes.appendChild(checkbox);
+            
+            // 获取存储列表
+            try {
+                console.log('请求存储列表');
+                const storageResult = await fetchWithEndpoints('storageGet', ['/api/storage'], {
+                    method: 'GET'
                 });
-            } else {
-                databaseCheckboxes.innerHTML = '<div class="empty-message">没有可用的数据库配置</div>';
-            }
-
-            // 加载存储列表
-            console.log('请求存储列表');
-            const storageResponse = await fetch('/api/storage', {
-                headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
+                
+                const storageData = storageResult.data;
+                console.log('存储列表响应:', storageData);
+                
+                const storageSelect = document.getElementById('scheduleStorage');
+                if (!storageSelect) {
+                    throw new Error('DOM元素未找到: scheduleStorage');
                 }
-            });
-            
-            // 检查存储响应状态
-            if (!storageResponse.ok) {
-                const errorText = await storageResponse.text();
-                console.error(`获取存储列表失败: 状态码=${storageResponse.status}, 错误信息=${errorText}`);
-                throw new Error(`获取存储列表失败: ${storageResponse.status}`);
-            }
-            
-            const storageData = await storageResponse.json();
-            console.log('存储列表响应:', storageData);
-
-            const storageSelect = document.getElementById('scheduleStorage');
-            if (!storageSelect) {
-                console.error('未找到存储选择器元素');
-                reject(new Error('DOM元素未找到: scheduleStorage'));
-                return;
-            }
-
-            // 清空现有选项
-            storageSelect.innerHTML = '';
-
-            if (storageData.success && storageData.storage && storageData.storage.length > 0) {
-                // 添加默认选项
-                const defaultOption = document.createElement('option');
-                defaultOption.value = '';
-                defaultOption.textContent = '-- 选择存储 --';
-                defaultOption.disabled = true;
-                storageSelect.appendChild(defaultOption);
-
-                // 添加存储选项
-                storageData.storage.forEach(storage => {
+                
+                // 清空现有选项
+                storageSelect.innerHTML = '';
+                
+                if (storageData.success && storageData.storage && storageData.storage.length > 0) {
+                    // 添加默认选项
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = '';
+                    defaultOption.textContent = '-- 选择存储 --';
+                    defaultOption.disabled = true;
+                    storageSelect.appendChild(defaultOption);
+                    
+                    // 添加存储选项
+                    storageData.storage.forEach(storage => {
+                        const option = document.createElement('option');
+                        option.value = storage.id;
+                        option.textContent = storage.name;
+                        
+                        // 如果有已保存的存储ID，使用它；否则使用活跃的存储
+                        if ((savedConfig && storage.id === savedConfig.storageId) || 
+                            (!savedConfig && storage.active)) {
+                            option.selected = true;
+                        }
+                        
+                        storageSelect.appendChild(option);
+                    });
+                } else {
                     const option = document.createElement('option');
-                    option.value = storage.id;
-                    option.textContent = storage.name;
-                    
-                    // 如果有已保存的存储ID，使用它；否则使用活跃的存储
-                    if ((savedConfig && storage.id === savedConfig.storageId) || 
-                        (!savedConfig && storage.active)) {
-                        option.selected = true;
-                    }
-                    
+                    option.value = '';
+                    option.textContent = '没有可用的存储配置';
+                    option.disabled = true;
+                    option.selected = true;
                     storageSelect.appendChild(option);
-                });
-            } else {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = '没有可用的存储配置';
-                option.disabled = true;
-                option.selected = true;
-                storageSelect.appendChild(option);
+                }
+            } catch (error) {
+                console.error('获取存储列表失败:', error.message);
+                reject(error);
+                return;
             }
             
             // 如果有保存的配置，设置其他表单字段
@@ -1620,12 +1676,12 @@ async function loadScheduleFormData() {
             } else {
                 console.log('没有找到已保存的计划备份配置');
             }
-
+            
             console.log('计划备份表单数据加载完成');
             resolve();
         } catch (error) {
             console.error('加载计划备份表单数据失败:', error);
-
+            
             const databaseCheckboxes = document.getElementById('scheduleDatabaseCheckboxes');
             if (databaseCheckboxes) {
                 databaseCheckboxes.innerHTML = `<div class="error-message">
@@ -1634,7 +1690,7 @@ async function loadScheduleFormData() {
                   <p>请检查网络连接或刷新页面重试</p>
                 </div>`;
             }
-
+            
             reject(error);
         }
     });
